@@ -104,7 +104,7 @@ docker compose logs -f app                      # Listening on 3000
 
 ```bash
 for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f"; done
-# the order comes from the file names: 01_schema, 02_migrations, 03..07_dbchanges
+# the order comes from the file names: 01_schema, 02_migrations, 03..10_dbchanges
 ```
 
 **Scenario B — MySQL runs from this compose file**: use `install.sh --with-db` or
@@ -115,7 +115,7 @@ Important notes:
 
 - `01_schema.sql` contains `CREATE DATABASE` + `USE`, and the database name inside it (`maxco_chat_im`)
   **must match** `MYSQLDATABASE` in `.env`. If the client uses a different name, change it in both places.
-- No file is **idempotent** — run them once against an empty database, in file-name order.
+- Except `10_dbchanges_202611161515.sql`, no file is **idempotent** — run them once against an empty database, in file-name order.
   For an **existing** database, request the incremental migration files (in the source repo: the
   `sql/dbchanges_*.sql` folder). The latest one, `sql/dbchanges_202610191417.sql`, is required for
   databases that already run the app: it removes the duplicate inside sales chats (category 3) that
@@ -123,6 +123,30 @@ Important notes:
   `sql/dbchanges_202610221020.sql` adds the indexes the client app pagination needs
   (`list_chats.user_id` and `list_messages(chat_id, created_at, id)`); without them every page of
   the list and of the message history scans the whole table. It is optional but recommended.
+- `10_dbchanges_202611161515.sql` (source repo: `sql/dbchanges_202611161515.sql`) **repairs** a
+  database where `07_dbchanges_202610191417.sql` stopped at line 53 with `ERROR 1215 ... Cannot add
+  foreign key constraint` (MySQL 8) or `ERROR 1901 ... cannot be used in the GENERATED ALWAYS AS clause`
+  (newer MariaDB). Such a database has no unique index, so duplicate inside sales chats can be created
+  again. The file merges those duplicates (per user the newest **active** chat is kept — the newest
+  chat when none is active — and the messages of the others move to it), changes the category
+  foreign key to `ON UPDATE RESTRICT`, and adds the missing column and unique index — each step only
+  when needed, so it is safe on any database and safe to run more than once. Back up first:
+  ```bash
+  # Scenario A - your own MySQL
+  mysqldump -h <MYSQLHOST> -u <MYSQLUSER> -p maxco_chat_im > backup.sql
+  mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < sql/10_dbchanges_202611161515.sql
+
+  # Scenario B - MySQL from docker-compose.with-db.yml (root password = MYSQLPASSWORD in .env)
+  DB="docker compose -f docker-compose.yml -f docker-compose.with-db.yml exec -T db"
+  $DB mysqldump -uroot -p"<MYSQLPASSWORD>" maxco_chat_im > backup.sql
+  $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/10_dbchanges_202611161515.sql
+  # an older --with-db install stopped at 07 during its first setup, so 08 and 09 never ran:
+  $DB mysql -uroot -p"<MYSQLPASSWORD>" -e "SHOW TABLES FROM maxco_chat_im LIKE 'list_chat_config'"
+  # no output -> run them too, in order:
+  $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/08_dbchanges_202610221020.sql
+  $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/09_dbchanges_202610231200.sql
+  ```
+  The last lines file 10 prints should read `1  1  RESTRICT  0`.
 - `01_schema.sql` already includes the **required seed** rows for `list_content_type` (id 1 = Text, 2 = File).
   Without them, messages fail to save (foreign key) and the CRM message list stays empty.
   `05_dbchanges_202610161456.sql` seeds chat category 3 (Inside Sales); without it the client app
@@ -317,7 +341,9 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `ER_BAD_FIELD_ERROR sender_name/user_name/admin_name` | `02_migrations.sql` was not run |
 | `ER_BAD_FIELD_ERROR user_referrer_id/user_referrer_name` | `04_dbchanges_*` / `06_dbchanges_*` not run on an existing database → run `sql/dbchanges_202610121639.sql` then `sql/dbchanges_202610190950.sql` |
 | `ER_NO_DB/ER_FK_ON_CATEGORY` or `POST /api/chats/user` fails with a foreign key error on `list_chats.category_id` | category 3 seed missing → run `sql/dbchanges_202610161456.sql` |
-| A user shows two inside sales chats (category 3) | `sql/dbchanges_202610191417.sql` not run yet → run it (it removes the duplicates and adds `uq_list_chats_sales_chat`) |
+| A user shows two inside sales chats (category 3) | The unique index `uq_list_chats_sales_chat` is missing → run `sql/10_dbchanges_202611161515.sql` (§5; it removes the duplicates and adds the index, safe to re-run) |
+| `ERROR 1215 (HY000) at line 53: Cannot add foreign key constraint` or `ERROR 1901 ... cannot be used in the GENERATED ALWAYS AS clause` while running `07_dbchanges_202610191417.sql` | The category foreign key still uses `ON UPDATE CASCADE`, which MySQL 8 / newer MariaDB refuse for that column → run `sql/10_dbchanges_202611161515.sql` (§5), then any later file that has not run yet (§5 shows how to check 08/09) |
+| `install.sh --with-db` on a first install stops with `container maxco_chat_cs_db is unhealthy` | Check `docker compose -f docker-compose.yml -f docker-compose.with-db.yml logs db`. **No `ERROR` line**: MySQL was only slow to finish its first setup (slow disk/CPU) — wait a minute and run `./install.sh --with-db` again. **An `ERROR` line from an `.sql` file** (the line stays in the log for the container's whole life, so it can be old): first count the chats — `docker compose -f docker-compose.yml -f docker-compose.with-db.yml exec -T db mysql -uroot -p"<MYSQLPASSWORD>" -N -e "SELECT COUNT(*) FROM maxco_chat_im.list_chats"`. **Only if it prints `0`** (nothing to lose): `docker compose -f docker-compose.yml -f docker-compose.with-db.yml down -v` (deletes the database volume), then `./install.sh --with-db` again with the fixed `sql/` files. **Any other result: never run `down -v`** — follow the `ERROR 1215` row above (run file 10 per §5) |
 | Upload returns `{"success":false,"message":"File upload failed"}` with `EACCES` in the logs | `/app/uploads` is mounted with the wrong ownership (e.g. a host folder bind mount) → use the `chat_uploads` named volume, or `chown -R 1000:1000` the host folder |
 | Upload fails behind nginx (413) | `client_max_body_size` is too low (a 50 MB file reaches about 72 MB as base64) |
 | Chat is not realtime | The reverse proxy is not forwarding the `Upgrade`/`Connection` headers, or `proxy_read_timeout` is too short |

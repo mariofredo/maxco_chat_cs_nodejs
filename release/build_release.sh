@@ -13,7 +13,7 @@
 #   1. build linux/amd64 + linux/arm64 images via buildx (tag maxco-chat-cs:<VERSION>)
 #   2. docker save each -> release/maxco-chat-cs_<VERSION>_linux-<arch>.tar
 #   3. sha256 each tar
-#   4. build handover folders: <pkg>/deploy/ (from deploy/) + <pkg>/release/ (tar + checksum)
+#   4. copy deploy/ + tar + checksums into fresh handover folders
 #   5. zip each handover folder + sha256 the zips
 #   6. print a summary + the steps the CLIENT must run (incl. manual SQL files)
 #
@@ -109,32 +109,27 @@ HANDOVER_ROOT="$(mktemp -d)"
 trap 'rm -rf "$HANDOVER_ROOT"' EXIT
 for ARCH in amd64 arm64; do
   D="$HANDOVER_ROOT/maxco-chat-cs_${VERSION}_${ARCH}"
-  # Same layout as the client's install folder (DEPLOYMENT.md §1):
-  #   <pkg>/deploy/   compose, .env.example, install.sh, DEPLOYMENT.md, sql/
-  #   <pkg>/release/  maxco-chat-cs_<VER>_linux-<arch>.tar (+ .sha256)
-  # The client runs: IMAGE_TAR=release/<tar> sudo ./deploy/install.sh
-  mkdir -p "$D/deploy" "$D/release"
-  cp -R deploy/. "$D/deploy/"
-  rm -f "$D/deploy/.env"                          # client secrets never ship
+  mkdir -p "$D"
+  cp -R deploy/. "$D/"
   cp "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar" \
-     "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar.sha256" "$D/release/"
+     "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar.sha256" "$D/"
   find "$D" -name '.DS_Store' -delete
-  chmod +x "$D/deploy/install.sh"
+  chmod +x "$D/install.sh"
 
   # Rewrite version references in the handover copy to THIS release version.
   # (deploy/.env.example, DEPLOYMENT.md, compose default: semuanya ditulis
   #  generic di repo, tapi saat di-ship menjadi dokumen versi ini.)
+  bash -n "$D/install.sh" 2>/dev/null || true   # sanity no-op
   sed -i.bak   -e "s#maxco-chat-cs:[0-9][0-9.-]*#maxco-chat-cs:${VERSION}#g" \
                -e "s#maxco-chat-cs_[0-9][0-9.-]*_linux#maxco-chat-cs_${VERSION}_linux#g" \
                -e "s#maxco-chat-cs\\:1\\.0\\.0#maxco-chat-cs:${VERSION}#g" \
-               "$D/deploy/.env.example" "$D/deploy/DEPLOYMENT.md" "$D/deploy/docker-compose.yml" \
-               "$D/deploy/docker-compose.with-db.yml" "$D/deploy/install.sh" 2>/dev/null || true
-  rm -f "$D/deploy/"*.bak 2>/dev/null
-  bash -n "$D/deploy/install.sh" || { echo "ERROR: handover install.sh syntax ($ARCH)" >&2; exit 1; }
+               "$D/.env.example" "$D/DEPLOYMENT.md" "$D/docker-compose.yml" "$D/docker-compose.with-db.yml" \
+               "$D/install.sh" 2>/dev/null || true
+  rm -f "$D/.env.example.bak" "$D/DEPLOYMENT.md.bak" "$D/docker-compose.yml.bak" "$D/docker-compose.with-db.yml.bak" 2>/dev/null
 
   # Exclude sql file yang sengaja ditahan (.release-skip / SKIP_SQL) SEBELUM zip.
   for S in ${SKIP_SQL:-}; do
-    rm -f "$D/deploy/sql/$S"
+    rm -f "$D/sql/$S"
     echo "==> Excluded from handover: sql/$S (SKIP_SQL)"
   done
   (cd "$HANDOVER_ROOT" && zip -qr "maxco-chat-cs_${VERSION}_${ARCH}.zip" "maxco-chat-cs_${VERSION}_${ARCH}")
@@ -169,18 +164,16 @@ else echo "  (none — schema unchanged)" ; fi
 echo
 echo "CLIENT UPDATE STEPS:"
 cat <<EOF
-  # from the install folder (the one with deploy/ and release/), see DEPLOYMENT.md §10
-  cp <new package>/release/maxco-chat-cs_${VERSION}_linux-<arch>.tar* release/
-  (cd release && sha256sum -c maxco-chat-cs_${VERSION}_linux-<arch>.tar.sha256)
-  cp -R <new package>/deploy/. deploy/          # deploy/.env is kept (never shipped)
-  # if there are manual SQL files above, run them now (mysql -u <user> -p < deploy/sql/<file>)
-  # merge new keys from deploy/.env.example into deploy/.env (keep current secrets!)
-  sed -i 's/^APP_IMAGE=.*/APP_IMAGE=maxco-chat-cs:${VERSION}/' deploy/.env
-  IMAGE_TAR=release/maxco-chat-cs_${VERSION}_linux-<arch>.tar sudo ./deploy/install.sh
+  sha256sum -c maxco-chat-cs_${VERSION}_linux-<arch>.tar.sha256
+  docker load -i maxco-chat-cs_${VERSION}_linux-<arch>.tar
+  # if there are manual SQL files above, run them now (mysql -u <user> -p < file)
+  cp .env.example /tmp/new-env-vars ; nano /tmp/new-env-vars   # review new vars
+  #   -> merge missing keys into existing .env (keep current secrets!)
+  sed -i 's/^APP_IMAGE=.*/APP_IMAGE=maxco-chat-cs:${VERSION}/' .env
+  docker compose up -d
+  curl -s http://127.0.0.1:\$(grep -E '^APP_PORT=' .env | cut -d= -f2)/healthz
 EOF
 echo
-echo "Fresh-install client: unzip, then inside the unzipped folder:"
-echo "  cp deploy/.env.example deploy/.env (fill it)"
-echo "  IMAGE_TAR=release/maxco-chat-cs_${VERSION}_linux-<arch>.tar sudo ./deploy/install.sh"
+echo "Fresh-install client: unzip, cp .env.example .env (fill it), ./install.sh"
 echo "Remember .env NEVER ships — the client owns those secrets."
 echo "Handover zips are in release/ ; .sha256 beside them."

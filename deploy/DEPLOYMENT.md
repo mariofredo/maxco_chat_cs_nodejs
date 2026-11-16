@@ -7,31 +7,21 @@ only the Docker image plus the configuration files in this folder.
 
 ## 1. What this package contains
 
-The package unzips to one **install folder** with two sub-folders. Keep this layout on the server
-(e.g. `/opt/maxco-chat-cs`) and run every command in this guide **from the install folder**:
+Hand over this folder together with **one** of the image files (matching the client's CPU):
 
 ```
-<install folder>/                      # run all commands from here
-├── deploy/
-│   ├── docker-compose.yml             # image-only deployment (required)
-│   ├── docker-compose.with-db.yml     # optional: also runs MySQL
-│   ├── .env.example                   # configuration template -> copy to deploy/.env
-│   ├── install.sh                     # installer / updater (load image + up + health wait)
-│   ├── DEPLOYMENT.md                  # this document
-│   └── sql/
-│       ├── 01_schema.sql              # base schema (required, run first)
-│       ├── 02_migrations.sql          # subsequent schema changes (run second)
-│       └── 0N_dbchanges_*.sql         # incremental changes (run in file-name order)
-└── release/
-    └── maxco-chat-cs_1.0.0_linux-amd64.tar (+ .sha256)   # for Intel/AMD 64-bit servers
-        maxco-chat-cs_1.0.0_linux-arm64.tar (+ .sha256)   # for ARM64 servers (e.g. Graviton)
+deploy/
+├── docker-compose.yml            # image-only deployment (required)
+├── docker-compose.with-db.yml    # optional: also runs MySQL
+├── .env.example                  # configuration template -> copy to .env
+├── install.sh                    # installer (load image + up + health wait)
+├── DEPLOYMENT.md                 # this document
+├── sql/
+│   ├── 01_schema.sql             # base schema (required, run first)
+│   └── 02_migrations.sql         # subsequent schema changes (run second)
+└── maxco-chat-cs_1.0.0_linux-amd64.tar (+ .sha256)   # for Intel/AMD 64-bit servers
+    maxco-chat-cs_1.0.0_linux-arm64.tar (+ .sha256)   # for ARM64 servers (e.g. Graviton)
 ```
-
-Each package contains the image file for **one** CPU type (amd64 or arm64).
-
-`docker compose` commands must run inside `deploy/` (that is where `.env` lives), so this guide
-writes them as `(cd deploy && docker compose ...)`. The parentheses return you to the install
-folder afterwards.
 
 If the client has their own registry, the image can be pushed and pulled instead — see §9.
 
@@ -50,52 +40,42 @@ If the client has their own registry, the image can be pushed and pulled instead
 
 ---
 
-## 3. Quick install (first time)
+## 3. Quick install
 
 ```bash
-# Run from the install folder (the one that contains deploy/ and release/)
+# 1. In this folder:
+sha256sum -c maxco-chat-cs_1.0.0_linux-amd64.tar.sha256   # (macOS: shasum -a 256 -c ...)
 
-# 1. Verify the image file
-(cd release && sha256sum -c maxco-chat-cs_1.0.0_linux-amd64.tar.sha256)   # (macOS: shasum -a 256 -c ...)
-
-# 2. Configuration: fill in the MySQL credentials
-cp deploy/.env.example deploy/.env && nano deploy/.env
+# 2. If the client already has MySQL, fill in .env first
+cp .env.example .env && nano .env
 
 # 3. Install (automatically docker load + compose up + health wait)
-IMAGE_TAR=release/maxco-chat-cs_1.0.0_linux-amd64.tar sudo ./deploy/install.sh
+IMAGE_TAR=maxco-chat-cs_1.0.0_linux-amd64.tar ./install.sh
 
 # If the client has no MySQL yet, one command for app + database:
-IMAGE_TAR=release/maxco-chat-cs_1.0.0_linux-amd64.tar sudo ./deploy/install.sh --with-db
+cp .env.example .env && nano .env
+./install.sh --with-db
 ```
 
-On ARM64 servers use the `linux-arm64` file name. `deploy/install.sh` is idempotent: re-running it
-to apply new configuration or redeploy is safe. To install a newer version later, see
-**§10 Update to a new version**.
-
-> [!NOTE]
-> With the default `sudo` configuration, a variable written *before* `sudo` (as above) is not
-> passed to the script. That is fine: when `IMAGE_TAR` is missing, `install.sh` picks
-> `release/maxco-chat-cs_<APP_IMAGE version>_linux-<this server's CPU>.tar` by itself. To pass it
-> explicitly anyway, put it after `sudo`: `sudo IMAGE_TAR=release/... ./deploy/install.sh`.
+`install.sh` is idempotent: re-running it to apply new configuration or redeploy is safe.
 
 ---
 
 ## 4. Manual install (without install.sh)
 
 ```bash
-# From the install folder
 # a. Load the image
-docker load -i release/maxco-chat-cs_1.0.0_linux-amd64.tar
+docker load -i maxco-chat-cs_1.0.0_linux-amd64.tar
 docker image inspect maxco-chat-cs:1.0.0 --format 'arch={{.Architecture}} version={{index .Config.Labels "org.opencontainers.image.version"}}'
 
 # b. Configuration
-cp deploy/.env.example deploy/.env && nano deploy/.env
+cp .env.example .env && nano .env
 
 # c. Prepare the database (see §5), then:
-(cd deploy && docker compose up -d)
-(cd deploy && docker compose ps)
+docker compose up -d
+docker compose ps
 curl -s http://127.0.0.1:3000/healthz          # {"ok":true}
-(cd deploy && docker compose logs -f app)       # Listening on 3000
+docker compose logs -f app                      # Listening on 3000
 ```
 
 ---
@@ -105,18 +85,18 @@ curl -s http://127.0.0.1:3000/healthz          # {"ok":true}
 **Scenario A — the client already has MySQL** (most common):
 
 ```bash
-for f in deploy/sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f"; done
-# the order comes from the file names: 01_schema, 02_migrations, 03.._dbchanges
+for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f"; done
+# the order comes from the file names: 01_schema, 02_migrations, 03..07_dbchanges
 ```
 
-**Scenario B — MySQL runs from this compose file**: use `sudo ./deploy/install.sh --with-db` or
-`(cd deploy && docker compose -f docker-compose.yml -f docker-compose.with-db.yml up -d)`; the
-`deploy/sql/` folder is executed in order when the database volume is created for the first time.
+**Scenario B — MySQL runs from this compose file**: use `install.sh --with-db` or
+`docker compose -f docker-compose.yml -f docker-compose.with-db.yml up -d`; the `sql/` folder
+is executed in order when the database volume is created for the first time.
 
 Important notes:
 
 - `01_schema.sql` contains `CREATE DATABASE` + `USE`, and the database name inside it (`maxco_chat_im`)
-  **must match** `MYSQLDATABASE` in `deploy/.env`. If the client uses a different name, change it in both places.
+  **must match** `MYSQLDATABASE` in `.env`. If the client uses a different name, change it in both places.
 - No file is **idempotent** — run them once against an empty database, in file-name order.
   For an **existing** database, request the incremental migration files (in the source repo: the
   `sql/dbchanges_*.sql` folder). The latest one, `sql/dbchanges_202610191417.sql`, is required for
@@ -138,8 +118,6 @@ Important notes:
 ---
 
 ## 6. Environment variables
-
-All variables live in `deploy/.env`.
 
 | Variable | Required | Example | Notes |
 |---|---|---|---|
@@ -253,7 +231,7 @@ docker push <client-registry>/maxco-chat-cs:1.0.0
 
 # client
 docker pull <client-registry>/maxco-chat-cs:1.0.0
-# then set APP_IMAGE=<client-registry>/maxco-chat-cs:1.0.0 in deploy/.env
+# then set APP_IMAGE=<client-registry>/maxco-chat-cs:1.0.0 in .env
 ```
 
 If a single multi-arch tag is preferred (the registry picks the right one for the server CPU):
@@ -274,41 +252,10 @@ docker buildx build --platform linux/amd64,linux/arm64 \
     tar czf /backup/uploads-$(date +%F).tar.gz -C /data .
   ```
 - **Database** is backed up separately by the client (e.g. `mysqldump maxco_chat_im`); the application stores nothing else.
-- **Upgrade**: see *Update to a new version* below. A few seconds of downtime;
-  `restart: unless-stopped` brings the container back up.
-- **Rollback**: set `APP_IMAGE` in `deploy/.env` back to the previous tag (the old image stays on
-  the server), then `sudo ./deploy/install.sh`.
-- **Logs**: stdout only (json-file driver, rotation 10 MB × 3 files). `(cd deploy && docker compose logs -f app)`.
-
-### Update to a new version
-
-The new package has the same `deploy/` + `release/` layout. Unzip it somewhere else (below:
-`<new package>`), then run from the install folder:
-
-```bash
-# 1. Copy the new image file into release/ and verify it (keep the previous tar for rollback)
-cp <new package>/release/maxco-chat-cs_1.0.0_linux-amd64.tar* release/
-(cd release && sha256sum -c maxco-chat-cs_1.0.0_linux-amd64.tar.sha256)
-
-# 2. Refresh deploy/ (compose files, install.sh, sql/, this guide). The package never
-#    contains .env, so your deploy/.env is kept.
-cp -R <new package>/deploy/. deploy/
-
-# 3. Existing database: run the new SQL files named in the release notes, once, in order
-#    mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < deploy/sql/<file>.sql
-
-# 4. Copy new variables from deploy/.env.example into deploy/.env (keep your current values),
-#    then point APP_IMAGE to the new version
-sed -i 's/^APP_IMAGE=.*/APP_IMAGE=maxco-chat-cs:1.0.0/' deploy/.env
-
-# 5. Update (load image + recreate container + health wait)
-IMAGE_TAR=release/maxco-chat-cs_1.0.0_linux-amd64.tar sudo ./deploy/install.sh
-```
-
-At the end, `install.sh` prints `Running image : maxco-chat-cs:<version>`; check it shows the new
-version. If step 4 was skipped, `install.sh` either stops with "tarball ... contains image(s) ...
-but APP_IMAGE in deploy/.env expects ..." or warns "release/ has a newer version ... than
-APP_IMAGE" and keeps the old version running. Fix `APP_IMAGE` and run step 5 again.
+- **Upgrade**: `docker load -i maxco-chat-cs_1.0.1_linux-amd64.tar`, update `APP_IMAGE` in `.env`,
+  then `docker compose up -d`. A few seconds of downtime; `restart: unless-stopped` brings the container back up.
+- **Rollback**: set `APP_IMAGE` back to the previous tag (the old image stays on the server) then `docker compose up -d`.
+- **Logs**: stdout only (json-file driver, rotation 10 MB × 3 files). `docker compose logs -f app`.
 
 ---
 
@@ -328,9 +275,6 @@ APP_IMAGE" and keeps the old version running. Fix `APP_IMAGE` and run step 5 aga
 | Chat is not realtime | The reverse proxy is not forwarding the `Upgrade`/`Connection` headers, or `proxy_read_timeout` is too short |
 | Message timestamps are off | Container `TZ` differs from the MySQL timezone; align both |
 | Check the running image version | `docker inspect maxco_chat_cs --format '{{.Config.Image}}'` and the `org.opencontainers.image.version` label |
-| `IMAGE_TAR points to a file that does not exist` | The tar is not in `release/`, or the command was not run from the install folder → `cd` to the folder that contains `deploy/` and `release/` |
-| `image ... is not loaded and no matching tarball was found` | No `release/maxco-chat-cs_<APP_IMAGE version>_linux-<CPU>.tar` → copy the tar into `release/` and check `APP_IMAGE` in `deploy/.env` |
-| After an update the old version is still running | `APP_IMAGE` in `deploy/.env` still has the old tag → set the new tag and run `deploy/install.sh` again (§10) |
 
 ---
 
@@ -361,7 +305,7 @@ optional: with the variable off (the default) the service never contacts Firebas
    `PUSH_NOTIFICATION_ENABLED=true` in its own `.env`.
 2. **Firebase service account**: Firebase console → Project settings → Service accounts →
    *Generate new private key*.
-3. **`deploy/.env` on this server**: `FCM_PUSH_ENABLED=true` plus one credential option (§6).
+3. **`.env` on this server**: `FCM_PUSH_ENABLED=true` plus one credential option (§6).
    Recommended:
    ```bash
    base64 -i service-account.json | tr -d '\n'   # paste the output into .env
@@ -369,7 +313,7 @@ optional: with the variable off (the default) the service never contacts Firebas
    ```
 4. **Database**: the `list_user_devices` table (§5). It is created by `02_migrations.sql`;
    for an existing database run `sql/dbchanges_202610051115.sql` from the source repo.
-5. **Restart** after changing `deploy/.env`: `(cd deploy && docker compose up -d)`.
+5. **Restart** after changing `.env`: `docker compose up -d`.
 
 Push is sent only for messages with `sender_type = admin` (CRM). The client's own replies are
 never pushed. Invalid/expired tokens are removed automatically.
@@ -383,7 +327,7 @@ curl -s -X POST http://127.0.0.1:3000/api/chats/devices \
   -d '{"userId":"<member id>","token":"<fcm token>","platform":"android"}'
 
 # 2. Send a message from the CRM and follow the log:
-(cd deploy && docker compose logs -f app) | grep FCM
+docker compose logs -f app | grep FCM
 ```
 
 Expected: `FCM: chat <id> -> 1/1 delivered`, and the notification on the device.

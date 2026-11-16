@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Maxco Chat Test Client</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js" integrity="sha384-ijk2QwnixVP19l5ENflXHY2/BMo9ANUiTqH6MiVk6i7wp68I6wjNQFOcyayHgClg" crossorigin="anonymous"></script>
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --text: #1f2933; --muted: #5f6c7b; --line: #d9dee5;
+    --primary: #2563eb; --primary-text: #ffffff; --soft: #eef3fd;
+    --ok: #15803d; --ok-bg: #e3f6ea; --err: #b91c1c; --err-bg: #fdeaea; --warn-bg: #fff6dc;
+    --app: #2563eb; --crm: #7c3aed; --mine: #dbe8ff; --theirs: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161c; --card: #1b222b; --text: #e6eaf0; --muted: #9aa7b5; --line: #2f3945;
+      --primary: #4f8df7; --primary-text: #0b1220; --soft: #1f2a3d;
+      --ok: #4ade80; --ok-bg: #153524; --err: #f87171; --err-bg: #3a1c1c; --warn-bg: #3a3118;
+      --app: #5b9bff; --crm: #a78bfa; --mine: #1f3a66; --theirs: #262e38;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 18px; margin: 0; }
+  h2 { font-size: 16px; margin: 0; }
+  h3 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  small, .muted { color: var(--muted); }
+  input[type=text], input:not([type]), input[type=file] {
+    font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; min-height: 32px; min-width: 0;
+  }
+  input:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+  input:disabled { opacity: .55; }
+  label { display: flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--muted); }
+  .btn {
+    font: inherit; min-height: 32px; padding: 4px 12px; border-radius: 6px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--text);
+  }
+  .btn:hover:not(:disabled) { border-color: var(--primary); }
+  .btn.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); font-weight: 600; }
+  .btn.small { min-height: 26px; padding: 0 8px; font-size: 12px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+  .top { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 20px; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; }
+  .top .fields { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; }
+  .top input { width: 190px; }
+  .top input.short { width: 90px; }
+  details.advanced { align-self: center; }
+  details.advanced summary { cursor: pointer; color: var(--muted); }
+  details.advanced .fields { margin-top: 8px; }
+
+  .hint { margin: 14px 20px 0; padding: 12px 16px; border-radius: 10px; background: var(--soft); border: 1px solid var(--primary);
+    display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; }
+  .hint.error { background: var(--err-bg); border-color: var(--err); }
+  .hint.ready { background: var(--ok-bg); border-color: var(--ok); }
+  .hint .label { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); display: block; }
+  .hint .text { font-size: 15px; font-weight: 600; }
+
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; padding: 14px 20px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .side { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--app); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .side.crm { border-top-color: var(--crm); }
+  .side-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+  .side-head .who { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.on { background: var(--ok); }
+  .dot.bad { background: var(--err); }
+  .state { font-size: 12px; color: var(--muted); }
+  .row { display: flex; gap: 8px; }
+  .row label { flex: 1; }
+  .row input { width: 100%; }
+  .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+  .group { border-top: 1px dashed var(--line); padding-top: 12px; }
+  .group:first-of-type { border-top: none; padding-top: 0; }
+  .sub { font-size: 12px; color: var(--muted); margin: 8px 0 4px; }
+
+  .chatbox { height: 220px; overflow-y: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .chatbox:empty::before { content: "Belum ada pesan. Pesan yang masuk ke room ini tampil di sini."; color: var(--muted); font-size: 12px; margin: auto; text-align: center; }
+  .bubble { max-width: 80%; padding: 6px 10px; border-radius: 12px; background: var(--theirs); align-self: flex-start; word-break: break-word; }
+  .bubble.mine { background: var(--mine); align-self: flex-end; }
+  .bubble .name { font-size: 11px; color: var(--muted); display: block; }
+  .bubble a { color: var(--primary); }
+  .bubble.system { align-self: center; background: transparent; color: var(--muted); font-size: 12px; font-style: italic; }
+  .chathead { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0; background: var(--card); }
+  .chathead + .chatbox { border-radius: 0 0 8px 8px; }
+  .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
+  .status { font-size: 12px; color: var(--muted); display: block; }
+  .status.online { color: var(--ok); font-weight: 600; }
+  .status.offline { color: var(--err); }
+  .status.typing { color: var(--primary); font-style: italic; }
+  .typing-bubble { display: inline-flex; gap: 4px; padding: 10px 12px; }
+  .typing-bubble i { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite; }
+  .typing-bubble i:nth-child(2) { animation-delay: .2s; }
+  .typing-bubble i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .typing-bubble i { animation: none; opacity: .6; } }
+  .compose { display: flex; gap: 6px; margin-top: 6px; }
+  .compose input[type=text], .compose input:not([type]) { flex: 1; }
+  .compose input[type=file] { flex: 1; font-size: 12px; }
+
+  .switch { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; padding: 3px 0; }
+  .switch input { width: 16px; height: 16px; }
+  .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+  .badge { padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--theirs); color: var(--muted); }
+  .badge.online { background: var(--ok-bg); color: var(--ok); }
+  .badge.offline { background: var(--err-bg); color: var(--err); }
+  .teams { display: flex; gap: 12px; margin-left: 24px; }
+  .teams label { flex-direction: row; align-items: center; gap: 4px; color: var(--text); }
+
+  .logwrap { margin: 0 20px 24px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .logbar { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-bottom: 8px; }
+  .logbar h2 { margin-right: 6px; }
+  .chip { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--text); cursor: pointer; min-height: 26px; }
+  .chip[aria-pressed=true] { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
+  .logbar .spacer { flex: 1; }
+  .logbar label { flex-direction: row; align-items: center; gap: 4px; }
+  #log { height: 280px; overflow-y: auto; font: 12px/1.5 ui-monospace, Menlo, Consolas, monospace; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); padding: 6px 8px; }
+  .log-row { display: flex; gap: 8px; padding: 1px 0; align-items: baseline; }
+  .log-row .t { color: var(--muted); flex: none; }
+  .log-row .src { flex: none; width: 52px; text-align: center; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .src-app { color: var(--app); background: var(--soft); }
+  .src-crm { color: var(--crm); background: color-mix(in srgb, var(--crm) 15%, transparent); }
+  .src-server { color: var(--muted); background: var(--theirs); }
+  .log-row .msg { white-space: pre-wrap; word-break: break-word; }
+  .log-row .msg.expandable { cursor: pointer; }
+  .k-error .msg { color: var(--err); }
+  .k-presence .msg { color: var(--ok); }
+  .k-typing .msg { color: var(--muted); }
+  .k-system .msg { font-style: italic; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <h1>Maxco Chat Test Client</h1>
+  <div class="fields">
+    <label>Server <input id="serverUrl" value="http://localhost:3000" autocomplete="off"></label>
+    <label>API key <input id="apiKey" placeholder="kosongkan jika tidak dipakai" autocomplete="off"></label>
+    <label>Chat ID <input id="chatId" class="short" placeholder="kosong" autocomplete="off"></label>
+    <button class="btn" data-act="clearChatId" title="Kosongkan Chat ID untuk membuat chat baru">Chat baru</button>
+  </div>
+  <details class="advanced">
+    <summary>Lanjutan</summary>
+    <div class="fields">
+      <label>Referrer ID (sales) <input id="referrerId" class="short" value="sales1" autocomplete="off"></label>
+      <label>Nama referrer <input id="referrerName" class="short" value="Sales Satu" autocomplete="off"></label>
+      <label>Halaman <input id="pageNum" class="short" value="1" autocomplete="off"></label>
+      <label>Jumlah per halaman <input id="pageSizeNum" class="short" value="20" autocomplete="off"></label>
+    </div>
+  </details>
+</header>
+
+<section id="hint" class="hint" role="status" aria-live="polite">
+  <div><span class="label">Langkah berikutnya</span><span class="text" id="hintText"></span></div>
+  <button id="hintBtn" class="btn primary" type="button"></button>
+</section>
+
+<main class="cols">
+
+  <section class="side app" data-side="app" aria-label="App (user)">
+    <div class="side-head">
+      <div class="who"><span class="dot" id="dot-app"></span><h2>App <small>(user)</small></h2><span class="state" id="state-app"></span></div>
+      <div class="btns">
+        <button class="btn primary" data-act="connect">Connect</button>
+        <button class="btn" data-act="disconnect" data-needs="conn">Putuskan</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>User ID <input id="appUserId" value="user123" autocomplete="off"></label>
+      <label>Nama <input id="appUserName" value="Budi" autocomplete="off"></label>
+    </div>
+
+    <div class="group">
+      <h3>1. Chat</h3>
+      <div class="btns">
+        <button class="btn primary" data-act="createChat" title="POST /api/chats">Buat chat</button>
+        <button class="btn" data-act="join" data-needs="conn chat" title="join_chat dan join_user">Masuk room</button>
+        <button class="btn" data-act="loadMessages" data-needs="chat">Muat riwayat</button>
+        <button class="btn" data-act="markRead" data-needs="chat">Tandai dibaca</button>
+      </div>
+      <div class="sub">Lainnya</div>
+      <div class="btns">
+        <button class="btn" data-act="myChats">Chat saya</button>
+        <button class="btn" data-act="unread">Belum dibaca</button>
+        <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>2. Percakapan</h3>
+      <div class="chathead">
+        <span class="avatar" id="avatar-app">CS</span>
+        <div><strong id="headName-app">Maxco Customer Support</strong><span class="status" id="headStatus-app">Status belum diketahui</span></div>
+      </div>
+      <div class="chatbox" id="chatbox-app" aria-live="polite"></div>
+      <div class="compose">
+        <input id="appMessage" placeholder="Tulis pesan sebagai user…" data-needs="conn chat" autocomplete="off">
+        <button class="btn primary" data-act="send" data-needs="conn chat">Kirim</button>
+      </div>
+      <div class="compose">
+        <input type="file" id="appFile" data-needs="conn chat">
+        <button class="btn" data-act="sendFile" data-needs="conn chat">Kirim file</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>3. Status online</h3>
+      <label class="switch"><input type="checkbox" id="appLive" data-needs="conn"> Saya sedang di layar Live Chat <small>(user terlihat online oleh CS)</small></label>
+      <label class="switch"><input type="checkbox" id="appWatch" data-needs="conn"> Pantau status CS dan Sales</label>
+      <div class="badges">
+        <span class="badge" id="badgeCs">CS: ?</span>
+        <span class="badge" id="badgeSales">Sales: ?</span>
+        <button class="btn small" data-act="teamPresence" title="GET /api/client/presence">Cek sekarang</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="side crm" data-side="crm" aria-label="CRM (CS)">
+    <div class="side-head">
+      <div class="who"><span class="dot" id="dot-crm"></span><h2>CRM <small>(CS)</small></h2><span class="state" id="state-crm"></span></div>
+      <div class="btns">
+        <button class="btn primary" data-act="connect">Connect</button>
+        <button class="btn" data-act="disconnect" data-needs="conn">Putuskan</button>
+      </div>
+    </div>
+    <div class="row">
+      <label>Admin ID <input id="crmAdminId" value="admin1" autocomplete="off"></label>
+      <label>Nama <input id="crmAdminName" value="CS Ani" autocomplete="off"></label>
+    </div>
+
+    <div class="group">
+      <h3>1. Chat</h3>
+      <div class="btns">
+        <button class="btn primary" data-act="join" data-needs="conn chat" title="join_chat dan join_user">Masuk room</button>
+        <button class="btn" data-act="loadMessages" data-needs="chat">Muat riwayat</button>
+        <button class="btn" data-act="markRead" data-needs="chat">Tandai dibaca</button>
+      </div>
+      <div class="sub">Daftar</div>
+      <div class="btns">
+        <button class="btn" data-act="crmPending">Pending</button>
+        <button class="btn" data-act="crmActive">Active</button>
+        <button class="btn" data-act="crmClosed">Closed</button>
+        <button class="btn" data-act="crmReferred">Referred</button>
+        <button class="btn" data-act="crmChatInfo" data-needs="chat">Info chat</button>
+        <button class="btn" data-act="crmConfig">Config</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>2. Percakapan</h3>
+      <div class="chathead">
+        <span class="avatar" id="avatar-crm">U</span>
+        <div><strong id="headName-crm">User</strong><span class="status" id="headStatus-crm">Status belum diketahui</span></div>
+      </div>
+      <div class="chatbox" id="chatbox-crm" aria-live="polite"></div>
+      <div class="compose">
+        <input id="crmMessage" placeholder="Tulis balasan sebagai admin…" data-needs="conn chat" autocomplete="off">
+        <button class="btn primary" data-act="send" data-needs="conn chat">Kirim</button>
+      </div>
+      <div class="compose">
+        <input type="file" id="crmFile" data-needs="conn chat">
+        <button class="btn" data-act="sendFile" data-needs="conn chat">Kirim file</button>
+      </div>
+      <div class="sub">Aksi pada chat</div>
+      <div class="btns">
+        <button class="btn" data-act="assign" data-needs="conn chat" title="assigned_admin_chat">Tugaskan saya</button>
+        <button class="btn" data-act="closeChat" data-needs="conn chat" title="close_chat">Tutup chat</button>
+        <button class="btn" data-act="openPromotion" title="Atas nama user di panel App">Buka promotion</button>
+        <button class="btn" data-act="openInsideSales" title="Atas nama user di panel App">Buka inside sales</button>
+      </div>
+    </div>
+
+    <div class="group">
+      <h3>3. Status online</h3>
+      <label class="switch"><input type="checkbox" id="crmLive" data-needs="conn"> Saya sedang di menu live chat <small>(tim terlihat online oleh user)</small></label>
+      <div class="teams">
+        <label><input type="checkbox" id="crmTeamCs" checked> Customer Support</label>
+        <label><input type="checkbox" id="crmTeamSales" checked> Sales</label>
+      </div>
+      <div class="badges">
+        <span class="badge" id="badgeUser">User: ?</span>
+        <button class="btn small" data-act="userPresence" title="GET /api/chats/crm/presence">Cek user</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<section class="logwrap">
+  <div class="logbar">
+    <h2>Log kejadian</h2>
+    <button class="chip" data-filter="all" aria-pressed="true">Semua</button>
+    <button class="chip" data-filter="chat" aria-pressed="false">Chat</button>
+    <button class="chip" data-filter="presence" aria-pressed="false">Presence</button>
+    <button class="chip" data-filter="typing" aria-pressed="false">Typing</button>
+    <button class="chip" data-filter="rest" aria-pressed="false">REST</button>
+    <button class="chip" data-filter="error" aria-pressed="false">Error</button>
+    <span class="spacer"></span>
+    <label><input type="checkbox" id="autoscroll" checked> Gulir otomatis</label>
+    <button class="btn small" data-act="clearLog">Bersihkan</button>
+  </div>
+  <div id="log" role="log" aria-live="off"></div>
+</section>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const val = (id) => $(id).value.trim();
+  const base = () => val('serverUrl').replace(/\/+$/, '');
+
+  // ---- remembered fields ----
+  const SAVED = ['serverUrl', 'apiKey', 'appUserId', 'appUserName', 'crmAdminId', 'crmAdminName', 'referrerId', 'referrerName', 'pageNum', 'pageSizeNum'];
+  const store = {
+    get(k) { try { return localStorage.getItem('mcc.' + k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem('mcc.' + k, v); } catch (e) { /* storage blocked */ } }
+  };
+
+  // ---- state ----
+  const sides = {
+    app: { role: 'user', label: 'App', socket: null, joinedChat: '', error: '', lastTyping: 0, idle: null, hideTyping: null, awaiting: null },
+    crm: { role: 'admin', label: 'CRM', socket: null, joinedChat: '', error: '', lastTyping: 0, idle: null, hideTyping: null, awaiting: null }
+  };
+  const SIDES = ['app', 'crm'];
+  const identity = (s) => s === 'app'
+    ? { id: val('appUserId'), name: val('appUserName') }
+    : { id: val('crmAdminId'), name: val('crmAdminName') };
+  const connected = (s) => !!(sides[s].socket && sides[s].socket.connected);
+  const chatId = () => val('chatId');
+  const isJoined = (s) => connected(s) && chatId() !== '' && sides[s].joinedChat === chatId();
+  const pageBody = () => ({ page: Number(val('pageNum')) || 1, pageSize: Number(val('pageSizeNum')) || 20 });
+  const paging = () => { const p = pageBody(); return `page=${p.page}&pageSize=${p.pageSize}`; };
+
+  // ---- log ----
+  let activeFilter = 'all';
+  const short = (v) => { const t = JSON.stringify(v); return t && t.length > 170 ? t.slice(0, 170) + '…' : t; };
+  const full = (v) => JSON.stringify(v, null, 2).slice(0, 6000);
+  const KIND = {
+    new_message: 'chat', assigned_admin_chat: 'chat', chat_closed: 'chat', chat_room_created: 'chat', new_user_chatroom: 'chat',
+    presence_changed: 'presence', presence_user_changed: 'presence', typing: 'typing'
+  };
+
+  function applyFilter(row) { row.hidden = activeFilter !== 'all' && row.dataset.kind !== activeFilter; }
+
+  function log(source, kind, text, detail) {
+    const row = document.createElement('div');
+    row.className = `log-row k-${kind}`;
+    row.dataset.kind = kind;
+    const t = document.createElement('span'); t.className = 't'; t.textContent = new Date().toLocaleTimeString();
+    const src = document.createElement('span'); src.className = `src src-${source}`;
+    src.textContent = source === 'app' ? 'App' : source === 'crm' ? 'CRM' : 'Server';
+    const msg = document.createElement('span'); msg.className = 'msg'; msg.textContent = text;
+    if (detail && detail !== text) {
+      msg.classList.add('expandable');
+      msg.title = 'Klik untuk melihat lengkap / ringkas';
+      msg.addEventListener('click', () => { msg.textContent = msg.textContent === text ? detail : text; });
+    }
+    row.append(t, src, msg);
+    applyFilter(row);
+    $('log').append(row);
+    if ($('autoscroll').checked) $('log').scrollTop = $('log').scrollHeight;
+  }
+
+  // ---- chat box ----
+  function addBubble(side, opts) {
+    const box = $('chatbox-' + side);
+    const b = document.createElement('div');
+    b.className = 'bubble' + (opts.system ? ' system' : opts.mine ? ' mine' : '');
+    if (opts.who && !opts.mine && !opts.system) {
+      const n = document.createElement('span'); n.className = 'name'; n.textContent = opts.who; b.append(n);
+    }
+    if (opts.href) {
+      const a = document.createElement('a'); a.href = opts.href; a.target = '_blank'; a.rel = 'noopener'; a.textContent = '📎 ' + opts.text; b.append(a);
+    } else {
+      b.append(opts.text);
+    }
+    const typingBubble = box.querySelector('.typing-bubble');
+    if (typingBubble) box.insertBefore(b, typingBubble); else box.append(b);   // typing dots stay last
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function bubbleFromMessage(side, m) {
+    const me = identity(side);
+    const mine = m.sender_type === sides[side].role && String(m.sender_id) === me.id;
+    let meta = m.metadata;
+    if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch (e) { meta = null; } }
+    const isFile = Number(m.content_type) === 2 && m.content_url;
+    addBubble(side, {
+      mine, who: m.sender_name || m.sender_id,
+      text: isFile ? ((meta && meta.fileName) || m.content_url) : (m.message || ''),
+      href: isFile ? `${base()}/${m.content_url}` : null
+    });
+    return mine;
+  }
+
+  function onMessage(side, m) {
+    if (bubbleFromMessage(side, m)) { clearTimeout(sides[side].awaiting); sides[side].awaiting = null; }
+    else clearTyping(side);   // the other party sent a message: they are no longer typing
+  }
+
+  function clearTyping(side) {
+    clearTimeout(sides[side].hideTyping);
+    sides[side].typingFrom = '';
+    const bubble = $('chatbox-' + side).querySelector('.typing-bubble');
+    if (bubble) bubble.remove();
+    renderHead(side);
+  }
+
+  // Typing indicator: moving dots at the end of the conversation + "sedang mengetik…" in the header.
+  // Hidden on isTyping:false, when the other party sends a message, or after 5 s without a refresh.
+  function showTyping(side, d) {
+    if (!d.isTyping) { clearTyping(side); return; }
+    const box = $('chatbox-' + side);
+    clearTimeout(sides[side].hideTyping);
+    sides[side].typingFrom = d.senderName || d.senderId;
+    if (!box.querySelector('.typing-bubble')) {
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble typing-bubble';
+      bubble.setAttribute('aria-label', 'sedang mengetik');
+      for (let i = 0; i < 3; i++) bubble.append(document.createElement('i'));
+      box.append(bubble);
+      box.scrollTop = box.scrollHeight;
+    }
+    sides[side].hideTyping = setTimeout(() => clearTyping(side), 5000);
+    renderHead(side);
+  }
+
+  // Conversation header: who you are talking to, whether they are online, or that they are typing.
+  function renderHead(side) {
+    let name, avatar, online;
+    if (side === 'app') {
+      name = 'Maxco Customer Support'; avatar = 'CS'; online = teamState.customer_support;
+    } else {
+      const u = identity('app');
+      name = `${u.name || u.id} (${u.id})`;
+      avatar = (u.name || u.id || '?').slice(0, 1).toUpperCase();
+      online = u.id in userOnline ? userOnline[u.id] : null;
+    }
+    $('headName-' + side).textContent = name;
+    $('avatar-' + side).textContent = avatar;
+    const typing = sides[side].typingFrom;
+    const st = $('headStatus-' + side);
+    st.className = 'status' + (typing ? ' typing' : online === true ? ' online' : online === false ? ' offline' : '');
+    st.textContent = typing ? `${typing} sedang mengetik…`
+      : online === true ? '● Online'
+      : online === false ? '○ Offline'
+      : side === 'crm' && !$('crmLive').checked ? 'Nyalakan "Saya sedang di menu live chat" untuk melihat status user'
+      : 'Status belum diketahui';
+  }
+
+  // ---- status badges ----
+  function setBadge(id, label, online) {
+    const el = $(id);
+    el.className = 'badge' + (online === true ? ' online' : online === false ? ' offline' : '');
+    el.textContent = `${label}: ${online === true ? '● online' : online === false ? '○ offline' : '?'}`;
+  }
+  const teamState = { customer_support: null, sales: null };
+  const setTeam = (team, online) => {
+    teamState[team] = online;
+    setBadge(team === 'customer_support' ? 'badgeCs' : 'badgeSales', team === 'customer_support' ? 'CS' : 'Sales', online);
+    renderHead('app');
+  };
+  const userOnline = {};
+  const renderUserBadge = () => {
+    const id = identity('app').id;
+    setBadge('badgeUser', `User ${id}`, id in userOnline ? userOnline[id] : null);
+    renderHead('crm');
+  };
+
+  // ---- connection ----
+  function connect(side) {
+    const s = sides[side];
+    if (s.socket) { s.socket.removeAllListeners(); s.socket.disconnect(); }
+    s.error = '';
+    s.joinedChat = '';
+    const key = val('apiKey');
+    const socket = io(base(), { auth: key ? { api_key: key } : {}, reconnection: false });
+    s.socket = socket;
+    log(side, 'system', `Menghubungkan ke ${base()}…`);
+    socket.on('connect', () => {
+      log(side, 'system', `Terhubung (socket ${socket.id})`);
+      // like the real app, listen to CS/Sales status as soon as it is connected
+      if (side === 'app') { $('appWatch').checked = true; syncAppWatch(); }
+      updateUI();
+    });
+    socket.on('disconnect', (reason) => {
+      log(side, 'system', `Terputus: ${reason}`);
+      s.joinedChat = '';
+      clearTyping(side);
+      for (const id of side === 'app' ? ['appLive', 'appWatch'] : ['crmLive']) $(id).checked = false;
+      updateUI();
+    });
+    socket.on('connect_error', (e) => {
+      s.error = e.message;
+      log(side, 'error', `Gagal terhubung: ${e.message}`);
+      updateUI();
+    });
+    socket.onAny((ev, payload) => log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`));
+    socket.on('new_message', (m) => onMessage(side, m));
+    socket.on('assigned_admin_chat', (d) => addBubble(side, { system: true, text: `Admin ditugaskan: ${d.adminName || d.adminId}` }));
+    socket.on('chat_closed', () => addBubble(side, { system: true, text: 'Chat ditutup' }));
+    socket.on('typing', (d) => showTyping(side, d));
+    socket.on('presence_changed', (d) => setTeam(d.team, d.online));
+    socket.on('presence_user_changed', (d) => { userOnline[d.userId] = d.online; renderUserBadge(); });
+    updateUI();
+  }
+
+  const connectBoth = () => SIDES.forEach(connect);
+
+  function emit(side, event, payload) {
+    if (!connected(side)) { log(side, 'error', 'Belum terhubung. Klik Connect dulu.'); return false; }
+    sides[side].socket.emit(event, payload);
+    return true;
+  }
+
+  function joinRoom(side) {
+    if (!chatId()) { log(side, 'error', 'Chat ID kosong. Buat chat dulu.'); return; }
+    const me = identity(side).id;
+    if (!emit(side, 'join_chat', { chatId: chatId(), userId: me })) return;
+    emit(side, 'join_user', { userId: me });
+    if (side === 'crm' && val('referrerId') && val('referrerId') !== me) emit(side, 'join_user', { userId: val('referrerId') });
+    sides[side].joinedChat = chatId();
+    log(side, 'system', `Masuk room chat ${chatId()}`);
+    updateUI();
+  }
+  const joinBoth = () => SIDES.forEach((s) => { if (connected(s)) joinRoom(s); });
+
+  // warns when the server never echoes the message back (typical cause: chat id not in the database)
+  function awaitEcho(side) {
+    clearTimeout(sides[side].awaiting);
+    sides[side].awaiting = setTimeout(() => {
+      log(side, 'error', 'Pesan belum kembali dari server. Kemungkinan Chat ID tidak ada di database; cek log server.');
+      addBubble(side, { system: true, text: 'Pesan belum terkirim. Cek Chat ID dan log server.' });
+    }, 3000);
+  }
+
+  function sendMessage(side) {
+    const input = $(side + 'Message');
+    const text = input.value.trim();
+    if (!text) return;
+    const me = identity(side);
+    if (emit(side, 'send_message', { chat_id: chatId(), sender_id: me.id, sender_type: sides[side].role, sender_name: me.name || me.id, content_type: 1, message: text })) {
+      input.value = '';
+      stopTyping(side);
+      awaitEcho(side);
+    }
+  }
+
+  function sendFile(side) {
+    const file = $(side + 'File').files[0];
+    if (!file) { log(side, 'error', 'Pilih berkas dulu.'); return; }
+    const me = identity(side);
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (emit(side, 'send_message', {
+        chat_id: chatId(), sender_id: me.id, sender_type: sides[side].role, sender_name: me.name || me.id,
+        content_type: 2, file_name: file.name, file_data: String(reader.result).split(',')[1] || ''
+      })) { $(side + 'File').value = ''; awaitEcho(side); }
+    };
+    reader.readAsDataURL(file);
+  }
+
+  // ---- typing: sent while the message box is being typed in ----
+  function emitTyping(side, isTyping) {
+    const me = identity(side);
+    emit(side, 'typing', { chatId: chatId(), isTyping, senderId: me.id, senderType: sides[side].role, senderName: me.name || me.id });
+  }
+  function onTypingInput(side) {
+    if (!isJoined(side)) return;
+    const s = sides[side];
+    if (Date.now() - s.lastTyping > 3000) { emitTyping(side, true); s.lastTyping = Date.now(); }
+    clearTimeout(s.idle);
+    s.idle = setTimeout(() => stopTyping(side), 2000);
+  }
+  function stopTyping(side) {
+    const s = sides[side];
+    clearTimeout(s.idle);
+    if (s.lastTyping && isJoined(side)) emitTyping(side, false);
+    s.lastTyping = 0;
+  }
+
+  // ---- REST ----
+  async function api(source, method, path, body) {
+    const key = val('apiKey');
+    const headers = {};
+    if (key) headers['X-API-Key'] = key;
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    try {
+      const res = await fetch(base() + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+      const json = await res.json().catch(() => null);
+      log(source, res.ok ? 'rest' : 'error', `${method} ${path} → ${res.status} ${short(json)}`, `${method} ${path} → ${res.status}\n${full(json)}`);
+      return { ok: res.ok, status: res.status, json };
+    } catch (err) {
+      log(source, 'error', `${method} ${path} gagal: ${err.message}. Server berjalan di ${base()}?`);
+      return { ok: false, status: 0, json: null };
+    }
+  }
+
+  async function createChat() {
+    const body = { userId: identity('app').id, userName: identity('app').name };
+    if (val('referrerId')) body.userReferrerId = val('referrerId');
+    const r = await api('app', 'POST', '/api/chats', body);
+    if (r.ok && r.json && r.json.data && r.json.data.id) {
+      $('chatId').value = r.json.data.id;
+      log('app', 'system', `Chat ID diisi otomatis: ${r.json.data.id}`);
+      updateUI();
+    }
+  }
+
+  async function loadMessages(side) {
+    const me = identity(side).id;
+    const r = side === 'app'
+      ? await api(side, 'GET', `/api/chats/${encodeURIComponent(chatId())}/messages?${paging()}`)
+      : await api(side, 'POST', '/api/chats/crm/messages', { chatId: chatId(), updateRead: false, userId: me, ...pageBody() });
+    if (r.ok && r.json && Array.isArray(r.json.data)) {
+      $('chatbox-' + side).replaceChildren();
+      r.json.data.forEach((m) => bubbleFromMessage(side, m));
+    }
+  }
+
+  async function teamPresence() {
+    const r = await api('app', 'GET', '/api/client/presence');
+    if (r.ok && r.json && r.json.data) { setTeam('customer_support', r.json.data.customer_support); setTeam('sales', r.json.data.sales); }
+  }
+
+  async function userPresence() {
+    const id = identity('app').id;
+    const r = await api('crm', 'GET', `/api/chats/crm/presence?userIds=${encodeURIComponent(id)}`);
+    if (r.ok && r.json && r.json.data) { userOnline[id] = r.json.data[id]; renderUserBadge(); }
+  }
+
+  // ---- presence switches ----
+  function syncAppLive() {
+    if ($('appLive').checked) emit('app', 'presence_user_register', { userId: identity('app').id });
+    else emit('app', 'presence_user_leave', {});
+  }
+  function syncAppWatch() {
+    if ($('appWatch').checked) emit('app', 'presence_subscribe', {});
+    else emit('app', 'presence_unsubscribe', {});
+  }
+  function syncCrmLive() {
+    if (!$('crmLive').checked) { emit('crm', 'presence_leave', {}); return; }
+    const teams = [];
+    if ($('crmTeamCs').checked) teams.push('customer_support');
+    if ($('crmTeamSales').checked) teams.push('sales');
+    if (!teams.length) { log('crm', 'error', 'Pilih minimal satu tim.'); $('crmLive').checked = false; return; }
+    emit('crm', 'presence_register', { adminId: identity('crm').id, teams });
+  }
+
+  // ---- actions (data-act) ----
+  const actions = {
+    connect: (s) => connect(s),
+    disconnect: (s) => { if (sides[s].socket) sides[s].socket.disconnect(); },
+    join: (s) => joinRoom(s),
+    createChat,
+    loadMessages: (s) => loadMessages(s),
+    markRead: (s) => api(s, 'PUT', `/api/chats/${encodeURIComponent(chatId())}/read`, { userId: identity(s).id }),
+    myChats: () => api('app', 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${paging()}`),
+    unread: () => api('app', 'GET', `/api/client/chat/unread/${encodeURIComponent(identity('app').id)}`),
+    ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), ...pageBody() }),
+    send: (s) => sendMessage(s),
+    sendFile: (s) => sendFile(s),
+    teamPresence,
+    userPresence,
+    crmPending: () => api('crm', 'GET', `/api/chats/crm/chat/pending?${paging()}`),
+    crmActive: () => api('crm', 'POST', '/api/chats/crm/chat/active', { adminId: identity('crm').id, ...pageBody() }),
+    crmClosed: () => api('crm', 'GET', `/api/chats/crm/closed?${paging()}`),
+    crmReferred: () => api('crm', 'POST', '/api/chats/crm/chat/referred', { userReferrerId: val('referrerId'), ...pageBody() }),
+    crmChatInfo: () => api('crm', 'GET', `/api/chats/crm/chat/room/${encodeURIComponent(chatId())}`),
+    crmConfig: () => api('crm', 'GET', '/api/chats/crm/config'),
+    assign: () => emit('crm', 'assigned_admin_chat', { chatId: chatId(), adminId: identity('crm').id, adminName: identity('crm').name }),
+    closeChat: () => emit('crm', 'close_chat', { chatId: chatId() }),
+    openPromotion: () => api('crm', 'POST', '/api/chats/crm/open_promotion_chat', { user_id: identity('app').id, user_name: identity('app').name }),
+    openInsideSales: () => api('crm', 'POST', '/api/chats/crm/open_inside_sales_chat', {
+      user_id: identity('app').id, user_name: identity('app').name,
+      user_referrer_id: val('referrerId'), user_referrer_name: val('referrerName'),
+      admin_id: identity('crm').id, admin_name: identity('crm').name
+    }),
+    clearChatId: () => { $('chatId').value = ''; SIDES.forEach((s) => { sides[s].joinedChat = ''; $('chatbox-' + s).replaceChildren(); }); updateUI(); },
+    clearLog: () => $('log').replaceChildren()
+  };
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (btn && !btn.disabled) {
+      const side = btn.closest('[data-side]');
+      actions[btn.dataset.act](side ? side.dataset.side : undefined);
+      return;
+    }
+    const chip = e.target.closest('[data-filter]');
+    if (chip) {
+      activeFilter = chip.dataset.filter;
+      document.querySelectorAll('[data-filter]').forEach((c) => c.setAttribute('aria-pressed', String(c === chip)));
+      $('log').querySelectorAll('.log-row').forEach(applyFilter);
+    }
+  });
+
+  for (const s of SIDES) {
+    $(s + 'Message').addEventListener('input', () => onTypingInput(s));
+    $(s + 'Message').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sendMessage(s); } });
+  }
+  $('appLive').addEventListener('change', syncAppLive);
+  $('appWatch').addEventListener('change', syncAppWatch);
+  $('crmLive').addEventListener('change', () => { syncCrmLive(); renderHead('crm'); });
+  $('crmTeamCs').addEventListener('change', () => { if ($('crmLive').checked) syncCrmLive(); });
+  $('crmTeamSales').addEventListener('change', () => { if ($('crmLive').checked) syncCrmLive(); });
+  $('chatId').addEventListener('input', updateUI);
+  $('appUserId').addEventListener('input', renderUserBadge);
+  $('appUserName').addEventListener('input', renderUserBadge);
+  for (const id of SAVED) $(id).addEventListener('change', () => store.set(id, $(id).value));
+
+  // ---- UI state: enable/disable, status text, next-step hint ----
+  const REASON = { conn: 'Connect dulu', chat: 'Isi Chat ID dulu (Buat chat)', joined: 'Masuk room dulu' };
+
+  function nextHint() {
+    const err = SIDES.find((s) => sides[s].error && !connected(s));
+    if (err) return { kind: 'error', text: `${sides[err].label} gagal terhubung: ${sides[err].error}. Periksa alamat server dan API key.`, label: `Coba lagi ${sides[err].label}`, run: () => connect(err) };
+    const a = connected('app'), c = connected('crm');
+    if (!a && !c) return { text: 'Hubungkan App dan CRM ke server.', label: 'Connect keduanya', run: connectBoth };
+    if (!a) return { text: 'CRM sudah terhubung. Hubungkan juga App.', label: 'Connect App', run: () => connect('app') };
+    if (!c) return { text: 'App sudah terhubung. Hubungkan juga CRM.', label: 'Connect CRM', run: () => connect('crm') };
+    if (!chatId()) return { text: 'Buat chat baru atas nama user, atau isi Chat ID yang sudah ada.', label: 'Buat chat', run: createChat };
+    if (!isJoined('app') || !isJoined('crm')) return { text: `Chat ${chatId()} siap. Masuk ke room-nya supaya pesan dan typing sampai ke kedua sisi.`, label: 'Masuk room (keduanya)', run: joinBoth };
+    return { kind: 'ready', text: 'Semua siap. Kirim pesan dari salah satu sisi, ketik untuk melihat typing, atau nyalakan status online.', label: '' };
+  }
+
+  function updateUI() {
+    for (const s of SIDES) {
+      const st = sides[s];
+      $('dot-' + s).className = 'dot' + (connected(s) ? ' on' : st.error ? ' bad' : '');
+      const connectBtn = document.querySelector(`[data-side="${s}"] [data-act="connect"]`);
+      connectBtn.textContent = connected(s) ? 'Hubungkan ulang' : 'Connect';
+      connectBtn.classList.toggle('primary', !connected(s));
+      $('state-' + s).textContent = connected(s)
+        ? `Terhubung${isJoined(s) ? ' · di room ' + chatId() : ''}`
+        : st.error ? 'Gagal terhubung' : 'Belum terhubung';
+    }
+    document.querySelectorAll('[data-needs]').forEach((el) => {
+      const side = el.closest('[data-side]');
+      const sd = side ? side.dataset.side : null;
+      const unmet = el.dataset.needs.split(' ').filter((n) =>
+        (n === 'conn' && !(sd && connected(sd))) || (n === 'chat' && !chatId()) || (n === 'joined' && !(sd && isJoined(sd))));
+      el.disabled = unmet.length > 0;
+      el.title = unmet.length ? unmet.map((n) => REASON[n]).join(', ') : el.title;
+    });
+    const h = nextHint();
+    $('hint').className = 'hint' + (h.kind ? ' ' + h.kind : '');
+    $('hintText').textContent = h.text;
+    $('hintBtn').hidden = !h.label;
+    $('hintBtn').textContent = h.label;
+    $('hintBtn').onclick = h.run || null;
+    renderHead('app');
+    renderUserBadge();
+  }
+
+  // ---- start ----
+  for (const id of SAVED) { const v = store.get(id); if (v !== null) $(id).value = v; }
+  setTeam('customer_support', null);
+  setTeam('sales', null);
+  updateUI();
+  log('server', 'system', 'Siap. Ikuti kotak "Langkah berikutnya" di atas.');
+</script>
+</body>
+</html>

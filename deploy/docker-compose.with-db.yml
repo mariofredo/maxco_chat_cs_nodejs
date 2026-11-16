@@ -1,0 +1,51 @@
+# Optional. Use this when the client does NOT have MySQL yet and wants to run
+# everything from one command:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.with-db.yml up -d
+#
+# MySQL is created automatically and the schemas in ./sql are executed in
+# alphabetical order the first time the database volume is created.
+name: maxco-chat-cs
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: maxco_chat_cs_db
+    restart: unless-stopped
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQLPASSWORD}
+      MYSQL_DATABASE: ${MYSQLDATABASE}
+      MYSQL_USER: ${MYSQLUSER}
+      MYSQL_PASSWORD: ${MYSQLPASSWORD}
+      TZ: ${TZ:-Asia/Jakarta}
+    volumes:
+      - db_data:/var/lib/mysql
+      # 01_schema.sql then 02_migrations.sql, 03..NN - executed in order (alphabetical)
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  app:
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # MySQL lives on the compose network, not on the host
+      MYSQLHOST: db
+      MYSQLPORT: 3306
+      TZ: ${TZ:-Asia/Jakarta}
+
+volumes:
+  db_data:

@@ -1,0 +1,8 @@
+MYSQLHOST=localhost
+MYSQLUSER=root
+MYSQLPASSWORD=
+MYSQLDATABASE=maxco_chat_im
+MYSQLPORT=3306
+# API key untuk proteksi REST (header X-API-Key) & socket (auth/query api_key).
+# Kosongkan untuk mode terbuka (development saja).
+CHAT_API_KEY=

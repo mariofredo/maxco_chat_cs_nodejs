@@ -1,0 +1,2 @@
+ALTER TABLE `list_chats`
+	ADD COLUMN `chat_ticket` VARCHAR(50) NULL DEFAULT NULL AFTER `id`;

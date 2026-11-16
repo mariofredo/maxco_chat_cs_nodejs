@@ -1,0 +1,21 @@
+# Konteks build: jangan kirim file yang tidak dipakai image (lebih cepat + tidak bocor rahasia)
+.git
+.gitignore
+node_modules
+dist
+release
+uploads
+.env
+.env.*
+!.env.example
+*.log
+logs
+.DS_Store
+.vscode
+test.html
+env-sample.txt
+docker-compose*.yml
+sql
+deploy
+Dockerfile
+dockerfile

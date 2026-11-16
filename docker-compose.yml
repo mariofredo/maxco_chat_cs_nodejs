@@ -1,0 +1,20 @@
+# Versi DEV / lokal — build dari source, source di-bind mount (hot edit).
+# Untuk deployment client pakai deploy/docker-compose.yml (image-only, tanpa source).
+services:
+  app:
+    build: .
+    container_name: node_app
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      # Di dalam container, "localhost" = container itu sendiri -> koneksi MySQL ditolak.
+      # Nilai .env tetap dipertahankan (cocok untuk `npm run dev` di host), hanya di-override di sini.
+      MYSQLHOST: ${DOCKER_MYSQLHOST:-host.docker.internal}
+    # Dibutuhkan di Linux; Docker Desktop (macOS/Windows) sudah menyediakannya otomatis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - .:/app
+    command: npm start

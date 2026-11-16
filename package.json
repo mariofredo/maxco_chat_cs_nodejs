@@ -1,0 +1,33 @@
+{
+  "name": "maxco_chat_cs_nodejs",
+  "version": "1.0.0",
+  "main": "dist/app.js",
+  "scripts": {
+    "start": "node dist/app.js",
+    "dev": "ts-node src/app.ts",
+    "dev:tsx": "tsx watch --env-file=.env.local src/app.ts",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
+    "build": "tsc"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.5.2",
+    "@types/socket.io": "^3.0.1",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "firebase-admin": "^14.5.0",
+    "mysql2": "^3.15.1",
+    "socket.io": "^4.8.1"
+  }
+}

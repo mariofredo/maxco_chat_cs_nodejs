@@ -1,0 +1,49 @@
+name: maxco-chat-cs
+
+# Client deployment: NO source code, NO build.
+# The client needs only this file + .env + the image (docker load / docker pull).
+# Run: docker compose up -d
+
+services:
+  app:
+    # IMPORTANT: keep APP_IMAGE in .env in sync with the version you loaded.
+    # If it points to an old tag, compose will happily run the OLD image.
+    image: ${APP_IMAGE:-maxco-chat-cs:1.0.0}
+    container_name: maxco_chat_cs
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    ports:
+      # host:container -> APP_PORT outside, PORT inside the container
+      - "${APP_PORT:-3000}:${PORT:-3000}"
+
+    volumes:
+      # Uploaded chat files must persist; never use a bind mount to a source folder
+      - chat_uploads:/app/uploads
+      # Push notification (FCM) - uncomment ONLY if you use FIREBASE_SERVICE_ACCOUNT_FILE
+      # (e.g. FIREBASE_SERVICE_ACCOUNT_FILE=/app/firebase-service-account.json in .env)
+      # and place the service account file in this deploy/ folder.
+      # - ./firebase-service-account.json:/app/firebase-service-account.json:ro
+
+    # Lets MYSQLHOST=host.docker.internal work when MySQL runs on the HOST server
+    # (not in a container). Remove this block if your MySQL is another container.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:${PORT:-3000}/healthz >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  chat_uploads:

@@ -15,6 +15,7 @@ deploy/
 ├── docker-compose.with-db.yml    # optional: also runs MySQL
 ├── .env.example                  # configuration template -> copy to .env
 ├── install.sh                    # installer (load image + up + health wait)
+├── check-endpoints.sh            # smoke test of a running deployment (§7)
 ├── DEPLOYMENT.md                 # this document
 ├── sql/
 │   ├── 01_schema.sql             # base schema (required, run first)
@@ -55,7 +56,14 @@ IMAGE_TAR=maxco-chat-cs_1.0.0_linux-amd64.tar ./install.sh
 # If the client has no MySQL yet, one command for app + database:
 cp .env.example .env && nano .env
 ./install.sh --with-db
+
+# 4. Check the whole deployment (app, database, API key) - see §7
+./check-endpoints.sh http://127.0.0.1:3000     # use APP_PORT from .env
 ```
+
+`install.sh` ending with `Done. Status: healthy` means the image is loaded and the app answers
+`/healthz`. That check does not touch the database, so always finish with `check-endpoints.sh`:
+the deployment is ready when it prints `RESULT: all checks passed`.
 
 `install.sh` is idempotent: re-running it to apply new configuration or redeploy is safe.
 
@@ -163,6 +171,35 @@ recommended in production), every protected endpoint needs `X-API-Key: <key>` (o
 ---
 
 ## 7. Post-deployment verification
+
+**Smoke test (run this first).** `check-endpoints.sh` calls the main endpoints of a running
+deployment and tells apart the problems that look alike from the client app. It is read-only:
+it creates nothing.
+
+```bash
+./check-endpoints.sh                                   # http://localhost:3000
+./check-endpoints.sh http://127.0.0.1:<APP_PORT>       # other port
+./check-endpoints.sh https://chat.example.com          # through the reverse proxy / domain
+
+# when CHAT_API_KEY is set on the server, pass the same key;
+# USER_ID / CHAT_ID (optional) check a real member's chat list and a real chat's messages
+CHAT_API_KEY=<key> USER_ID=<member id> CHAT_ID=<chat id> ./check-endpoints.sh <url>
+```
+
+| Output | Meaning / action |
+|---|---|
+| `RESULT: all checks passed.` | Deployment works (app, routes, database, API key) |
+| `RESULT: all checks passed, with a warning.` + `OPEN API` | Works, but REST answers without an API key → set `CHAT_API_KEY` in `.env` (§6) and share it with the app/CRM teams |
+| `RESULT: N check(s) failed.` | One or more of the hints below is printed |
+| `UNREACHABLE` | No answer → check the URL/port, DNS, TLS certificate, and that the container is running (`docker compose ps`) |
+| `API KEY` | The server has `CHAT_API_KEY` set → run again with `CHAT_API_KEY=<key>` (the value from `.env`) |
+| `OLD BUILD` | Routes return Express `Cannot GET/POST ...` 404 → an older image is running; check `APP_IMAGE` in `.env` and `docker inspect maxco_chat_cs --format '{{.Config.Image}}'` (§10) |
+| `DATABASE` | Endpoints that query MySQL answer 500 → `docker compose logs app` (`ECONNREFUSED` / `ER_ACCESS_DENIED` / `ER_NO_SUCH_TABLE`); fix `MYSQL*` in `.env` or run the missing `sql/` files (§5) |
+
+Exit code: `0` = all checks passed, `1` = at least one FAIL, `2` = usage error, so it can also run
+from a script or monitoring.
+
+**Manual checks** (upload storage and realtime are not covered by the smoke test):
 
 ```bash
 curl -s http://127.0.0.1:3000/healthz

@@ -59,6 +59,16 @@ cp .env.example .env && nano .env
 
 `install.sh` is idempotent: re-running it to apply new configuration or redeploy is safe.
 
+Without `IMAGE_TAR`, `install.sh` picks the tar for the `APP_IMAGE` version **and this server's
+CPU** by itself, refuses a tar built for the other CPU, and replaces an image of the wrong CPU that
+was loaded earlier. On ARM64 servers use the `linux-arm64` file name.
+
+> [!IMPORTANT]
+> When you run it with `sudo`, write `IMAGE_TAR=...` **after** `sudo`:
+> `sudo IMAGE_TAR=maxco-chat-cs_1.0.0_linux-arm64.tar ./install.sh`.
+> A variable written before `sudo` (`IMAGE_TAR=... sudo ./install.sh`) is dropped by `sudo`;
+> `install.sh` then prints `IMAGE_TAR not set` and chooses by CPU as above.
+
 ---
 
 ## 4. Manual install (without install.sh)
@@ -264,6 +274,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | Symptom | Cause & action |
 |---|---|
 | `exec format error` during `docker compose up` | Image architecture does not match the server → use the matching amd64/arm64 tar |
+| `The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8)` (or the reverse) | The other CPU's image was loaded, e.g. by an older `install.sh` run as `IMAGE_TAR=... sudo ./install.sh` (sudo drops the variable). Current `install.sh` replaces it by itself: `sudo ./install.sh`. With an older `install.sh`: `sudo docker compose down`, `sudo docker rmi maxco-chat-cs:1.0.0`, then `sudo IMAGE_TAR=maxco-chat-cs_1.0.0_linux-arm64.tar ./install.sh` |
 | Container restarts repeatedly, MySQL `ECONNREFUSED` / `ETIMEDOUT` in logs | Wrong `MYSQLHOST` (from inside a container, `localhost` means the container itself) or MySQL refuses connections from the container IP → use `host.docker.internal` with `extra_hosts: host-gateway` |
 | `ER_NO_SUCH_TABLE list_chats` | `01_schema.sql` was not run, or `MYSQLDATABASE` differs from the database name used by the schema |
 | `ER_BAD_FIELD_ERROR sender_name/user_name/admin_name` | `02_migrations.sql` was not run |

@@ -147,6 +147,9 @@ uploads/*
 # artefak serah terima image (tar + checksum), jangan ikut di-commit
 release/*
 !release/build_release.sh
+# image tar + checksum yang di-generate build_release.sh ke deploy/ (paket client)
+deploy/maxco-chat-cs_*.tar
+deploy/maxco-chat-cs_*.tar.sha256
 # dbchanges yang sengaja ditahan dari rilis (build_release.sh membaca file ini)
 .release-skip
 

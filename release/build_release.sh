@@ -4,21 +4,21 @@
 #
 #   ./build_release.sh [VERSION]
 #
-#   VERSION       image version/tag (default: next patch of the latest released
-#                 version found in release/, e.g. 1.0.0 -> 1.0.1)
-#   .release-skip (opsional, di root repo) daftar deploy/sql/*.sql yang TIDAK ikut
-#                 dikirim (dbchanges yang ditahan); bisa juga env SKIP_SQL="..."
+#   VERSION       image version/tag (default: next patch of the latest version
+#                 found in deploy/ or release/, e.g. 1.0.0 -> 1.0.1)
+#   FORCE=1       allow rebuilding a VERSION whose tar already exists
+#   .release-skip (opsional, di root repo) daftar deploy/sql/*.sql yang ditahan
+#                 (dbchanges yang belum ikut rilis); bisa juga env SKIP_SQL="..."
 #
-# What it does:
-#   1. build linux/amd64 + linux/arm64 images via buildx (tag maxco-chat-cs:<VERSION>)
-#   2. docker save each -> release/maxco-chat-cs_<VERSION>_linux-<arch>.tar
-#   3. sha256 each tar
-#   4. copy deploy/ + tar + checksums into fresh handover folders
-#   5. zip each handover folder + sha256 the zips
-#   6. print a summary + the steps the CLIENT must run (incl. manual SQL files)
+# What it does (layout = deploy/DEPLOYMENT.md §1 — deploy/ IS the package):
+#   1. move tars of OTHER versions out of deploy/ into release/ (archive)
+#   2. build linux/amd64 + linux/arm64 images via buildx (tag maxco-chat-cs:<VERSION>)
+#   3. docker save each -> deploy/maxco-chat-cs_<VERSION>_linux-<arch>.tar
+#   4. sha256 each tar -> deploy/<tar>.sha256
+#   5. print a summary + the steps the CLIENT must run (incl. manual SQL files)
 #
-# Source of truth for what ships: deploy/ (compose, .env.example, install.sh,
-# DEPLOYMENT.md, deploy/sql/*). Nothing on the client side needs this repo.
+# Hand over deploy/ with ONE of the tars (the client's CPU). Never hand over
+# deploy/.env — it holds real credentials. Image tars are git-ignored.
 #
 # Git is NOT touched (no commit, no push) — that stays under your control.
 # ============================================================================
@@ -28,12 +28,14 @@ REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_DIR"
 
 VERSION="${1:-}"
+OUT_DIR="deploy"
+ARCHIVE_DIR="release"
 
 # ---- 0. discover next version if not given --------------------------------
 if [ -z "$VERSION" ]; then
-  LATEST="$(ls -1 release/maxco-chat-cs_*_linux-amd64.tar 2>/dev/null \
-    | sed -E 's#.*/maxco-chat-cs_([0-9]+\.[0-9]+\.[0-9]+)_linux-amd64.tar#\1#' \
-    | sort -V | tail -1 || true)"
+  LATEST="$(ls -1 "$OUT_DIR"/maxco-chat-cs_*_linux-*.tar "$ARCHIVE_DIR"/maxco-chat-cs_*_linux-*.tar 2>/dev/null \
+    | sed -E 's#.*/maxco-chat-cs_([0-9]+\.[0-9]+\.[0-9]+)_linux-[a-z0-9]+\.tar$#\1#' \
+    | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -Vu | tail -1 || true)"
   if [ -n "${LATEST:-}" ]; then
     MAJOR=$(echo "$LATEST" | cut -d. -f1)
     MINOR=$(echo "$LATEST" | cut -d. -f2)
@@ -44,103 +46,106 @@ if [ -z "$VERSION" ]; then
   fi
 fi
 echo "==> Version: $VERSION"
-[ "$VERSION" = "1.0.0" ] && [ -f release/maxco-chat-cs_1.0.0_linux-amd64.tar ] &&
-  { echo "ERROR: 1.0.0 already exists in release/ — pass an explicit new version." >&2; exit 1; }
+if [ "${FORCE:-0}" != "1" ]; then
+  for F in "$OUT_DIR/maxco-chat-cs_${VERSION}_linux-"*.tar "$ARCHIVE_DIR/maxco-chat-cs_${VERSION}_linux-"*.tar; do
+    [ -e "$F" ] || continue
+    echo "ERROR: $F already exists — pass a new version (or FORCE=1 to rebuild)." >&2
+    exit 1
+  done
+fi
 
 # ---- preflight -------------------------------------------------------------
 command -v docker >/dev/null      || { echo "ERROR: docker not installed." >&2; exit 1; }
 docker info >/dev/null            || { echo "ERROR: docker daemon not running." >&2; exit 1; }
 docker buildx version >/dev/null  || { echo "ERROR: buildx plugin missing." >&2; exit 1; }
 [ -f dockerfile ] || [ -f Dockerfile ] || { echo "ERROR: dockerfile missing in repo root." >&2; exit 1; }
-[ -f deploy/sql/01_schema.sql ]   || { echo "ERROR: deploy/sql/01_schema.sql missing." >&2; exit 1; }
+[ -f "$OUT_DIR/sql/01_schema.sql" ] || { echo "ERROR: $OUT_DIR/sql/01_schema.sql missing." >&2; exit 1; }
 
-NEW_SQL_FILES="$(ls -1 deploy/sql/*.sql 2>/dev/null | sed 's#.*/##' || true)"
-mkdir -p release
+if command -v sha256sum >/dev/null; then SHA256="sha256sum"
+elif command -v shasum >/dev/null; then SHA256="shasum -a 256"
+else echo "ERROR: neither sha256sum nor shasum found." >&2; exit 1; fi
+
+NEW_SQL_FILES="$(ls -1 "$OUT_DIR"/sql/*.sql 2>/dev/null | sed 's#.*/##' || true)"
+mkdir -p "$ARCHIVE_DIR"
 
 # SKIP_SQL bisa lewat file .release-skip (satu nama file per baris, opsional) atau env var.
-# File ini memudahkan 'dbchanges dibiarkan dulu' tanpa harus mengingat env var.
 if [ -z "${SKIP_SQL:-}" ] && [ -f .release-skip ]; then
   SKIP_SQL="$(grep -vE '^\s*(#|$)' .release-skip | tr '\n' ' ')"
 fi
 if [ -n "${SKIP_SQL:-}" ]; then
-  echo "==> SKIP_SQL aktif (file IDLE tidak ikut rilis): $SKIP_SQL"
+  echo "==> SKIP_SQL aktif (tidak masuk daftar SQL manual): $SKIP_SQL"
 fi
 
 # Case-insensitive filesystem gotcha: 'dockerfile' and 'Dockerfile' are the same
-# file on macOS (same inode). dockerfile stays lowercase because compose `build`
-# and legacy habits reference it; buildx detects both spellings fine.
+# file on macOS/Windows (same inode). buildx detects both spellings fine.
 if [ "$(ls -id dockerfile Dockerfile 2>/dev/null | awk '{print $1}' | sort -u | wc -l | tr -d ' ')" = "2" ]; then
   echo "NOTE: dockerfile and Dockerfile are TWO different files in this repo — review both!" >&2
 fi
 
-# validate compose files (syntax only)
-# NB: `env_file: .env` merujuk file client yang memang tidak ada di repo,
-# jadi validasi dibuat file .env dummy supaya config parser lolos.
+# Validate compose files (syntax only). `env_file: .env` needs a deploy/.env to
+# exist; the client's real one may be there — NEVER touch it. Only a dummy we
+# create ourselves is removed afterwards.
 ENV_FOR_VALIDATION="$(mktemp)"
-cp deploy/.env.example "$ENV_FOR_VALIDATION"
-touch deploy/.env
-docker compose --env-file "$ENV_FOR_VALIDATION" -f deploy/docker-compose.yml config -q \
-  || { echo "ERROR: deploy/docker-compose.yml invalid" >&2; rm -f deploy/.env "$ENV_FOR_VALIDATION"; exit 1; }
-docker compose --env-file "$ENV_FOR_VALIDATION" -f deploy/docker-compose.yml -f deploy/docker-compose.with-db.yml config -q \
-  || { echo "ERROR: deploy/docker-compose.with-db.yml invalid" >&2; rm -f deploy/.env "$ENV_FOR_VALIDATION"; exit 1; }
-rm -f deploy/.env "$ENV_FOR_VALIDATION"
-bash -n deploy/install.sh                                          || { echo "ERROR: install.sh syntax" >&2; exit 1; }
+CREATED_DUMMY_ENV=0
+cleanup_validation() {
+  rm -f "$ENV_FOR_VALIDATION"
+  [ "$CREATED_DUMMY_ENV" = "1" ] && rm -f "$OUT_DIR/.env"
+  CREATED_DUMMY_ENV=0
+}
+trap cleanup_validation EXIT
+cp "$OUT_DIR/.env.example" "$ENV_FOR_VALIDATION"
+if [ ! -e "$OUT_DIR/.env" ]; then
+  : > "$OUT_DIR/.env"
+  CREATED_DUMMY_ENV=1
+fi
+docker compose --env-file "$ENV_FOR_VALIDATION" -f "$OUT_DIR/docker-compose.yml" config -q \
+  || { echo "ERROR: $OUT_DIR/docker-compose.yml invalid" >&2; exit 1; }
+docker compose --env-file "$ENV_FOR_VALIDATION" -f "$OUT_DIR/docker-compose.yml" -f "$OUT_DIR/docker-compose.with-db.yml" config -q \
+  || { echo "ERROR: $OUT_DIR/docker-compose.with-db.yml invalid" >&2; exit 1; }
+cleanup_validation
+trap - EXIT
+bash -n "$OUT_DIR/install.sh" || { echo "ERROR: install.sh syntax" >&2; exit 1; }
 
+# ---- 1. archive tars of other versions (deploy/ holds ONE version only) ----
+for F in "$OUT_DIR"/maxco-chat-cs_*_linux-*.tar "$OUT_DIR"/maxco-chat-cs_*_linux-*.tar.sha256; do
+  [ -e "$F" ] || continue
+  case "$(basename "$F")" in
+    "maxco-chat-cs_${VERSION}_linux-"*) continue ;;
+  esac
+  if [ -e "$ARCHIVE_DIR/$(basename "$F")" ]; then
+    echo "ERROR: cannot archive $F — $ARCHIVE_DIR/$(basename "$F") already exists. Resolve it by hand." >&2
+    exit 1
+  fi
+  mv "$F" "$ARCHIVE_DIR/"
+  echo "==> Archived $F -> $ARCHIVE_DIR/"
+done
 
-# ---- 1. build both architectures --------------------------------------------
+# ---- 2-4. build, save, checksum both architectures -------------------------
+SAVE_PLATFORM_FLAG=0
+docker save --help 2>/dev/null | grep -q -- '--platform' && SAVE_PLATFORM_FLAG=1
+
 for ARCH in amd64 arm64; do
+  TAR="maxco-chat-cs_${VERSION}_linux-${ARCH}.tar"
+  LOG="${TMPDIR:-/tmp}/buildx_${ARCH}.log"
   echo "==> Building linux/$ARCH ..."
   docker buildx build --platform "linux/$ARCH" \
     --build-arg APP_VERSION="$VERSION" \
-    -t "maxco-chat-cs:$VERSION" --load . > /tmp/buildx_$ARCH.log 2>&1 \
-    || { echo "ERROR building linux/$ARCH — log:"; tail -30 /tmp/buildx_$ARCH.log; exit 1; }
-  ACTUAL="$(docker image inspect maxco-chat-cs:$VERSION --format '{{.Architecture}}')"
+    -t "maxco-chat-cs:$VERSION" --load . > "$LOG" 2>&1 \
+    || { echo "ERROR building linux/$ARCH — log ($LOG):"; tail -30 "$LOG"; exit 1; }
+  ACTUAL="$(docker image inspect "maxco-chat-cs:$VERSION" --format '{{.Architecture}}')"
   [ "$ACTUAL" = "$ARCH" ] || { echo "ERROR: expected $ARCH, got $ACTUAL" >&2; exit 1; }
 
-  echo "==> Saving + sha256 (linux/$ARCH) ..."
-  docker save -o "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar" "maxco-chat-cs:$VERSION"
-  (cd release && shasum -a 256 "maxco-chat-cs_${VERSION}_linux-${ARCH}.tar" \
-    > "maxco-chat-cs_${VERSION}_linux-${ARCH}.tar.sha256")
+  echo "==> Saving + sha256 -> $OUT_DIR/$TAR"
+  if [ "$SAVE_PLATFORM_FLAG" = "1" ]; then
+    docker save --platform "linux/$ARCH" -o "$OUT_DIR/$TAR" "maxco-chat-cs:$VERSION"
+  else
+    docker save -o "$OUT_DIR/$TAR" "maxco-chat-cs:$VERSION"
+  fi
+  (cd "$OUT_DIR" && $SHA256 "$TAR" > "$TAR.sha256")
   docker rmi "maxco-chat-cs:$VERSION" >/dev/null 2>&1 || true
 done
 
-# ---- 2. handover folders + zips --------------------------------------------
-HANDOVER_ROOT="$(mktemp -d)"
-trap 'rm -rf "$HANDOVER_ROOT"' EXIT
-for ARCH in amd64 arm64; do
-  D="$HANDOVER_ROOT/maxco-chat-cs_${VERSION}_${ARCH}"
-  mkdir -p "$D"
-  cp -R deploy/. "$D/"
-  cp "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar" \
-     "release/maxco-chat-cs_${VERSION}_linux-${ARCH}.tar.sha256" "$D/"
-  find "$D" -name '.DS_Store' -delete
-  chmod +x "$D/install.sh"
-
-  # Rewrite version references in the handover copy to THIS release version.
-  # (deploy/.env.example, DEPLOYMENT.md, compose default: semuanya ditulis
-  #  generic di repo, tapi saat di-ship menjadi dokumen versi ini.)
-  bash -n "$D/install.sh" 2>/dev/null || true   # sanity no-op
-  sed -i.bak   -e "s#maxco-chat-cs:[0-9][0-9.-]*#maxco-chat-cs:${VERSION}#g" \
-               -e "s#maxco-chat-cs_[0-9][0-9.-]*_linux#maxco-chat-cs_${VERSION}_linux#g" \
-               -e "s#maxco-chat-cs\\:1\\.0\\.0#maxco-chat-cs:${VERSION}#g" \
-               "$D/.env.example" "$D/DEPLOYMENT.md" "$D/docker-compose.yml" "$D/docker-compose.with-db.yml" \
-               "$D/install.sh" 2>/dev/null || true
-  rm -f "$D/.env.example.bak" "$D/DEPLOYMENT.md.bak" "$D/docker-compose.yml.bak" "$D/docker-compose.with-db.yml.bak" 2>/dev/null
-
-  # Exclude sql file yang sengaja ditahan (.release-skip / SKIP_SQL) SEBELUM zip.
-  for S in ${SKIP_SQL:-}; do
-    rm -f "$D/sql/$S"
-    echo "==> Excluded from handover: sql/$S (SKIP_SQL)"
-  done
-  (cd "$HANDOVER_ROOT" && zip -qr "maxco-chat-cs_${VERSION}_${ARCH}.zip" "maxco-chat-cs_${VERSION}_${ARCH}")
-  cp "$HANDOVER_ROOT/maxco-chat-cs_${VERSION}_${ARCH}.zip" release/
-done
-(cd release && shasum -a 256 maxco-chat-cs_${VERSION}_*.zip > maxco-chat-cs_handover-archives.sha256)
-
-# ---- 3. product sql files: which must be run manually on the client DB -----
-# Overridable via env: SKIP_SQL="07_dbchanges_202610191417.sql" ./build_release.sh
-# -> file-file itu dihapus DARI handover DAN dari daftar instruksi manual.
-#    (dibuat untuk dbchanges yang sengaja ditahan dan tidak ikut rilis ini)
+# ---- 5. product sql files: which must be run manually on the client DB -----
 MANUAL_SQL=""
 for F in $NEW_SQL_FILES; do
   case "$F" in
@@ -153,27 +158,36 @@ for F in $NEW_SQL_FILES; do
   [ "$SKIP" = "0" ] && MANUAL_SQL="$MANUAL_SQL $F"
 done
 
-# ---- 4. summary + client instructions ---------------------------------------
+# ---- summary + client instructions -----------------------------------------
 echo
 echo "================= RELEASE BUILT ================="
-( cd release && ls -lh maxco-chat-cs_${VERSION}_* )
+( cd "$OUT_DIR" && ls -lh maxco-chat-cs_${VERSION}_* )
 echo
+EXAMPLE_IMAGE="$(grep -E '^APP_IMAGE=' "$OUT_DIR/.env.example" | head -n1 | cut -d= -f2- | tr -d ' \r' || true)"
+if [ "$EXAMPLE_IMAGE" != "maxco-chat-cs:$VERSION" ]; then
+  echo "WARNING: $OUT_DIR/.env.example has APP_IMAGE=$EXAMPLE_IMAGE but the image is maxco-chat-cs:$VERSION." >&2
+  echo "         install.sh will refuse the tar until they match — update .env.example (and the docs) first." >&2
+fi
+if [ -n "${SKIP_SQL:-}" ]; then
+  echo "WARNING: held SQL files are still in $OUT_DIR/sql/ — remove them from what you hand over: $SKIP_SQL" >&2
+fi
 echo "Manual SQL files for EXISTING client databases (run once, in order):"
-if [ -n "$MANUAL_SQL" ]; then echo "  $MANUAL_SQL" | tr ' ' '\n' | sed 's/^/   /'
+if [ -n "$MANUAL_SQL" ]; then echo "  $MANUAL_SQL" | tr ' ' '\n' | sed '/^$/d' | sed 's/^/   sql\//'
 else echo "  (none — schema unchanged)" ; fi
 echo
-echo "CLIENT UPDATE STEPS:"
+echo "CLIENT STEPS (inside the handed-over deploy/ folder):"
 cat <<EOF
-  sha256sum -c maxco-chat-cs_${VERSION}_linux-<arch>.tar.sha256
-  docker load -i maxco-chat-cs_${VERSION}_linux-<arch>.tar
-  # if there are manual SQL files above, run them now (mysql -u <user> -p < file)
-  cp .env.example /tmp/new-env-vars ; nano /tmp/new-env-vars   # review new vars
-  #   -> merge missing keys into existing .env (keep current secrets!)
-  sed -i 's/^APP_IMAGE=.*/APP_IMAGE=maxco-chat-cs:${VERSION}/' .env
-  docker compose up -d
-  curl -s http://127.0.0.1:\$(grep -E '^APP_PORT=' .env | cut -d= -f2)/healthz
+  First install (DEPLOYMENT.md §3):
+    sha256sum -c maxco-chat-cs_${VERSION}_linux-<arch>.tar.sha256
+    cp .env.example .env && nano .env
+    IMAGE_TAR=maxco-chat-cs_${VERSION}_linux-<arch>.tar ./install.sh
+
+  Upgrade (DEPLOYMENT.md §10) - keep the existing .env:
+    sha256sum -c maxco-chat-cs_${VERSION}_linux-<arch>.tar.sha256
+    docker load -i maxco-chat-cs_${VERSION}_linux-<arch>.tar
+    sed -i 's/^APP_IMAGE=.*/APP_IMAGE=maxco-chat-cs:${VERSION}/' .env
+    docker compose up -d
 EOF
 echo
-echo "Fresh-install client: unzip, cp .env.example .env (fill it), ./install.sh"
-echo "Remember .env NEVER ships — the client owns those secrets."
-echo "Handover zips are in release/ ; .sha256 beside them."
+echo "Hand over deploy/ with ONE tar (+ .sha256) matching the client's CPU."
+echo "NEVER hand over deploy/.env — the client owns those secrets."

@@ -17,6 +17,7 @@ deploy/
 ├── install.sh                    # installer (load image + up + health wait)
 ├── check-endpoints.sh            # smoke test of a running deployment (§7)
 ├── DEPLOYMENT.md                 # this document
+├── DATABASE.md                   # database reference (tables, columns, import rules)
 ├── sql/
 │   ├── 01_schema.sql             # base schema (required, run first)
 │   └── 02_migrations.sql         # subsequent schema changes (run second)
@@ -110,6 +111,8 @@ for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$
 **Scenario B — MySQL runs from this compose file**: use `install.sh --with-db` or
 `docker compose -f docker-compose.yml -f docker-compose.with-db.yml up -d`; the `sql/` folder
 is executed in order when the database volume is created for the first time.
+
+Table and column reference (for data migrations or reporting): [`DATABASE.md`](DATABASE.md).
 
 Important notes:
 

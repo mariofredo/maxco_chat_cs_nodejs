@@ -27,6 +27,10 @@ system into this app. It describes the database as it is **after every file in `
 | `list_user_devices` | Push notification (FCM) tokens of members' phones |
 | `list_chat_config` | Settings as key / value pairs |
 
+![Table diagram: list_chats in the center, list_messages and list_chat_admin_history linked by chat_id, list_chat_category and list_content_type as lookups, list_user_devices and list_chat_config standalone](images/database-diagram.png)
+
+The same links as text:
+
 ```text
  list_chat_category                          list_content_type
    category_id  <──────┐                ┌──────>  content_type_id

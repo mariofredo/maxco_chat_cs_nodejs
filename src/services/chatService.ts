@@ -3,8 +3,8 @@ import { pool } from "../config/db.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { randomNumericString } from "../utils/helper.js";
 import { saveChatFile } from "../utils/chatFileStorage.js";
-import type { SendMessageInput, ChatDataInfo, CrmChatDataInfo } from "../utils/dataModel.js";
-import { fetchPendingChats } from "./crmChatService.js";
+import type { SendMessageInput, ChatDataInfo } from "../utils/dataModel.js";
+import { assignWaitingChat } from "./crmChatService.js";
 import { getIO } from "../sockets/io.js";
 
 export async function fetchActiveChats() {
@@ -224,19 +224,15 @@ export async function sendMessage(input: SendMessageInput) {
     content_url,
     metadata
   } = input;
-  const pendingCrmChat: CrmChatDataInfo[] = await fetchPendingChats();
-  
-  // Check if chat exists in pending CRM chats
-  const isChatInPending = pendingCrmChat.some((chat) => { 
-      return chat.id === parseInt(chat_id.toString()); 
-  });
-  
-  if (sender_type === "admin" && isChatInPending) {
-    await pool.query(
-      "UPDATE list_chats SET status = 'active', admin_id = ?, admin_name = ? WHERE id = ?;",
-      [sender_id, sender_name, chat_id]
-    );
+  // An admin reply to a waiting chat assigns it to that admin. Checked on the
+  // chat itself, before the message is stored (a stored admin message ends
+  // the waiting state).
+  const justAssigned =
+    sender_type === "admin"
+      ? await assignWaitingChat(chat_id, sender_id, sender_name)
+      : false;
 
+  if (justAssigned) {
     const io = getIO();
     io.to(`chat_${chat_id}`).emit("assigned_admin_chat", {
       chatId: chat_id,
@@ -300,7 +296,7 @@ export async function sendMessage(input: SendMessageInput) {
     content_url: contentUrl,
     metadata: metadataValue,
     created_at: new Date(),
-    is_just_assigned: ((sender_type === "admin" && isChatInPending)) ? true : false,
+    is_just_assigned: justAssigned,
     chat_data: chatData
   };
 }

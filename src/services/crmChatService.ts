@@ -219,6 +219,40 @@ export async function fetchPendingChats(
   return rows as CrmChatDataInfo[];
 }
 
+/**
+ * Assigns a chat to the admin who replies to it, when that chat is waiting.
+ *
+ * "Waiting" is checked on the chat itself, with the same rules as the WHERE
+ * of `fetchPendingChats` (default category): Customer Service category,
+ * pending or active, and no admin message newer than the waiting threshold.
+ * Keep the two in step. The check and the assignment are one UPDATE, so the
+ * chat's position in the paged waiting list does not matter.
+ *
+ * Returns true when the chat was waiting and is now active with this admin.
+ */
+export async function assignWaitingChat(
+  chatId: number | string,
+  adminId: string,
+  adminName: string | null,
+): Promise<boolean> {
+  const maxWaitingMinutes = await getMaxWaitingMinutes();
+  const [result] = await pool.query<ResultSetHeader>(
+    `UPDATE list_chats lc
+     SET lc.status = 'active', lc.admin_id = ?, lc.admin_name = ?
+     WHERE lc.id = ?
+       AND lc.category_id = 1
+       AND lc.status IN ('pending', 'active')
+       AND NOT EXISTS (
+         SELECT 1 FROM list_messages m
+         WHERE m.chat_id = lc.id
+           AND m.sender_type = 'admin'
+           AND m.created_at > DATE_SUB(NOW(), INTERVAL ? MINUTE)
+       )`,
+    [adminId, adminName, chatId, maxWaitingMinutes],
+  );
+  return result.affectedRows > 0;
+}
+
 export async function fetchClosedChat(
   page: number = 1,
   pageSize: number = 20,

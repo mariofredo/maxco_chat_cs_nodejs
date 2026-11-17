@@ -1,7 +1,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { pool } from "../../src/config/db.js";
-import { assignWaitingChat, getMaxWaitingMinutes } from "../../src/services/crmChatService.js";
+import { pool } from "../src/config/db.js";
+import { assignWaitingChat, getMaxWaitingMinutes } from "../src/services/crmChatService.js";
 import { cleanupTestChats, getChat, hasDb, insertChat, insertMessage } from "./helpers.js";
 
 after(() => pool.end());

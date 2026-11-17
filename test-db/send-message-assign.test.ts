@@ -1,10 +1,10 @@
 import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Server } from "socket.io";
-import { pool } from "../../src/config/db.js";
-import { setIO } from "../../src/sockets/io.js";
-import { sendMessage } from "../../src/services/chatService.js";
-import { fetchPendingChats } from "../../src/services/crmChatService.js";
+import { pool } from "../src/config/db.js";
+import { setIO } from "../src/sockets/io.js";
+import { sendMessage } from "../src/services/chatService.js";
+import { fetchPendingChats } from "../src/services/crmChatService.js";
 import { cleanupTestChats, hasDb, insertChat, insertMessage } from "./helpers.js";
 
 after(() => pool.end());

@@ -1,9 +1,11 @@
 // Helpers for tests that run against a real MySQL database (`npm run test:db`).
+// This folder sits outside test/ on purpose: `npm test` must never reach a DB,
+// even when a root .env fills MYSQLDATABASE.
 // They only touch rows whose chat_ticket starts with TEST-AWC-.
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
-import { pool } from "../../src/config/db.js";
+import { pool } from "../src/config/db.js";
 
-/** The DB suites skip themselves when no database is configured (plain `npm test`). */
+/** The DB suites skip themselves when no database is configured. */
 export const hasDb = Boolean(process.env.MYSQLDATABASE);
 
 export async function cleanupTestChats(): Promise<void> {

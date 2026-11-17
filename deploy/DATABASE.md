@@ -224,19 +224,82 @@ chats and messages. The app uses the numbers directly, so keep the IDs exactly a
 
 ## 4. Rules for importing data
 
-Filled in by Task 2.
+Some of these rules are enforced by the database (the insert fails); the others are only followed
+by the app, so the database accepts rows that break them and the app then behaves wrongly.
+
+1. **Order.** Reference data (§3) must exist first, then `list_chats`, then `list_messages` and
+   `list_chat_admin_history`. Old chat IDs may be kept or renumbered, but every message's `chat_id`
+   must point to its chat's `id` in this database. On a fresh install the next automatic IDs are
+   46 (`list_chats`) and 211 (`list_messages`); after explicit IDs are inserted, numbering continues
+   above the highest one.
+2. **Inside Sales (category 3): one chat per member, ever.** Enforced by the database through
+   `sales_chat_key`, and it counts closed chats too. A second one fails with
+   `ERROR 1062 (23000): Duplicate entry '<user_id>' for key 'uq_list_chats_sales_chat'`.
+   Import it as `active`, with `user_referrer_id` / `user_referrer_name` and `admin_id` /
+   `admin_name` set to the member's sales person: the CRM only opens `active` Inside Sales chats, and
+   a closed one blocks a new one from being created.
+3. **Never write `sales_chat_key`.** The database computes it. Giving it a value fails with
+   `ERROR 1906 (HY000): The value specified for generated column 'sales_chat_key' in table 'list_chats' has been ignored`
+   (in strict SQL mode, the default; otherwise the value is silently ignored).
+4. **Customer Service (category 1): at most one open chat per member.** Not enforced by the
+   database. When a member opens the chat screen, the app reuses only their newest `pending` or
+   `active` category 1 chat; older open ones are never reused and stay open in the CRM lists.
+   Import old conversations as `closed` with `closed_at` set, unless they are really still open.
+5. **Promotion (category 2): at most one `active` chat per member, `chat_ticket = 'Promotion'`.**
+   Not enforced by the database.
+6. **`chat_ticket`** for categories 1 and 3: 12 random digits written as `NNNN-NNNN-NNNN`
+   (e.g. `4821-0937-1156`). The database does not require it to be unique, but people use it to
+   refer to a chat, so keep it unique. Old ticket numbers may be kept if they fit in 50 characters.
+7. **Text message:** `content_type = 1`, the text in `message`, `content_url` and `metadata` NULL.
+8. **File message:** `content_type = 2`, `message` NULL,
+   `content_url = 'uploads/chat/<epoch milliseconds>_<file name>'` (relative: no leading `/`, no
+   host), `metadata = '{"fileName": "<file name>", "size": <bytes>}'`. Copy the file itself to that
+   path inside the `chat_uploads` volume (mounted at `/app/uploads` in the app container); the app
+   serves it at `<app base URL>/uploads/chat/...`. Files that only exist at an old URL (old server,
+   cloud storage) must be downloaded, stored this way and their URL rewritten; full URLs in
+   `content_url` are not what the app and its clients are built for.
+9. **`metadata` must be valid JSON or NULL.** Anything else fails with
+   ``ERROR 4025 (23000): CONSTRAINT `list_messages.metadata` failed for `maxco_chat_im`.`list_messages` ``.
+10. **Sender:** `sender_type = 'user'` with the member ID in `sender_id`, or `sender_type = 'admin'`
+    with the CRM ID; `sender_name` = display name.
+11. **Read state:** `read_at` NULL means unread. The mobile app's unread badge counts `admin`
+    messages with `read_at` NULL, so set `read_at` (for example to the message's `created_at`) on
+    old messages that should not show as unread.
+12. **Time zone.** The app writes times with the database server's `NOW()`, so every timestamp is in
+    the database server's local time, not UTC (the bundled `docker-compose.with-db.yml` runs it
+    with `TZ=Asia/Jakarta`). Import times in that same zone; check it with
+    `SELECT @@global.time_zone, @@system_time_zone, NOW();`. Times in the wrong zone shift every chat,
+    and the CRM waiting list (§3, `max_waiting_minutes`) compares them with the current time.
 
 ---
 
 ## 5. Columns the app does not write
 
-Filled in by Task 2.
+Kept from the earlier version of the app. The current app never writes or reads them, so they can
+be filled from old data or left empty:
+
+- `list_chats.department_id`
+- the whole `list_chat_admin_history` table (`chat_id`, `admin_id`, `assigned_at`,
+  `unassigned_at`, `redirect_to_department_id`, `redirect_date`). If it is filled, its `chat_id`
+  must exist in `list_chats` (foreign key).
 
 ---
 
 ## 6. Known issues
 
-Filled in by Task 2.
+1. **`list_chats.updated_at` does not exist, but the app writes it.** Changing a chat's status
+   through the REST API and assigning an agent to a chat both run
+   `UPDATE list_chats SET ..., updated_at = NOW() ...`, which fails with
+   `ERROR 1054 (42S22): Unknown column 'updated_at' in 'field list'`. No `sql/` file creates the
+   column. An import should not create or rely on it.
+2. **On MySQL 8.0, `07_dbchanges_202610191417.sql` fails at its last step** with
+   `ERROR 1215 (HY000): Cannot add foreign key constraint`. MySQL 8.0 does not allow the stored
+   generated column `sales_chat_key` on `category_id`, whose foreign key has `ON UPDATE CASCADE`;
+   MariaDB does. The result on MySQL 8.0: duplicate Inside Sales chats are removed but
+   `sales_chat_key` and `uq_list_chats_sales_chat` are not created, so rules 2 and 3 above are not
+   enforced. With `docker-compose.with-db.yml` (MySQL 8.0) the database setup stops at that file,
+   so `08_*` and `09_*` do not run either (`list_chat_config` is missing). Everything in this
+   document was checked on MariaDB 10.4, where all files run.
 
 ---
 

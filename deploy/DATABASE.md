@@ -5,9 +5,13 @@ system into this app. It describes the database as it is **after every file in `
 (`01_schema.sql` through `09_dbchanges_202610231200.sql`).
 
 - Database name: `maxco_chat_im` (must match `MYSQLDATABASE` in `.env`), charset `utf8mb4`.
-- Server: MySQL 8.0 / MariaDB 10.4+. Types below are shown as MariaDB reports them; MySQL 8.0 shows
-  the same columns without display widths (`bigint` for `bigint(20)`, `int` for `int(11)`).
-  `list_messages.metadata` is `longtext` holding JSON on both. Before using MySQL 8.0, read §6.
+- Server: checked on MariaDB 10.4, where every file runs. On MySQL 8.0 and newer MariaDB (10.11
+  confirmed), `07_dbchanges_202610191417.sql` stops part-way: read §6 before choosing a server.
+  Before relying on rules 2 and 3 in §4, check that `SHOW CREATE TABLE list_chats` lists
+  `sales_chat_key` and `uq_list_chats_sales_chat`.
+- Types below are shown as MariaDB reports them; MySQL 8.0 shows the same columns without display
+  widths (`bigint` for `bigint(20)`, `int` for `int(11)`). `list_messages.metadata` is `longtext`
+  holding JSON on both.
 
 ---
 
@@ -61,11 +65,11 @@ Customer Service chats after old ones are closed).
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
 | `id` | `bigint(20)` | no | auto increment | Chat ID. Messages point to it. |
-| `chat_ticket` | `varchar(50)` | yes | NULL | Ticket number shown to people, e.g. `4821-0937-1156`; promotion chats hold the text `Promotion`. Format in §4. |
+| `chat_ticket` | `varchar(50)` | yes | NULL | Ticket number shown to people, e.g. `K4ZQ-09B7-1A5C`; promotion chats hold the text `Promotion`. Format in §4. |
 | `category_id` | `int(11)` | no | — | Chat category, see `list_chat_category` (1 Customer Service, 2 Announcement, 3 Inside Sales). |
 | `user_id` | `varchar(100)` | no | — | Member ID from the client's member system. |
 | `user_name` | `varchar(100)` | yes | NULL | Member's display name when the chat was opened. |
-| `user_referrer_id` | `varchar(100)` | yes | NULL | ID of the sales person the member belongs to (their referrer), as sent by the mobile app. The Inside Sales chat is with this person. |
+| `user_referrer_id` | `varchar(100)` | yes | NULL | ID of the sales person the member belongs to (their referrer), as sent by the mobile app. Stored on Customer Service and Inside Sales chats; the Inside Sales chat is with this person, and the CRM's sales view lists chats by it. |
 | `user_referrer_name` | `varchar(100)` | yes | NULL | Display name of that sales person. |
 | `admin_id` | `varchar(100)` | yes | NULL | CRM ID of the CS / Sales person handling the chat. NULL while nobody has taken it. |
 | `admin_name` | `varchar(100)` | yes | NULL | Display name of that person. |
@@ -233,7 +237,8 @@ by the app, so the database accepts rows that break them and the app then behave
    46 (`list_chats`) and 211 (`list_messages`); after explicit IDs are inserted, numbering continues
    above the highest one.
 2. **Inside Sales (category 3): one chat per member, ever.** Enforced by the database through
-   `sales_chat_key`, and it counts closed chats too. A second one fails with
+   `sales_chat_key` (where the key exists, see §6.2; otherwise the import must check this itself),
+   and it counts closed chats too. A second one fails with
    `ERROR 1062 (23000): Duplicate entry '<user_id>' for key 'uq_list_chats_sales_chat'`.
    Import it as `active`, with `user_referrer_id` / `user_referrer_name` and `admin_id` /
    `admin_name` set to the member's sales person: the CRM only opens `active` Inside Sales chats, and
@@ -241,21 +246,30 @@ by the app, so the database accepts rows that break them and the app then behave
 3. **Never write `sales_chat_key`.** The database computes it. Giving it a value fails with
    `ERROR 1906 (HY000): The value specified for generated column 'sales_chat_key' in table 'list_chats' has been ignored`
    (in strict SQL mode, the default; otherwise the value is silently ignored).
-4. **Customer Service (category 1): at most one open chat per member.** Not enforced by the
-   database. When a member opens the chat screen, the app reuses only their newest `pending` or
-   `active` category 1 chat; older open ones are never reused and stay open in the CRM lists.
-   Import old conversations as `closed` with `closed_at` set, unless they are really still open.
+4. **Customer Service (category 1): import old conversations as `closed`**, with `closed_at` set.
+   The database accepts open (`pending` / `active`) ones, but the app does not cope with many:
+   - Every old open chat lands in the CRM waiting list (its last CS / Sales message is older than
+     `max_waiting_minutes`), which is sorted oldest first. When an agent replies, the app only takes
+     over (sets `active` and `admin_id` on) chats among the first 20 of that list, so 20 or more
+     imported open chats stop new member chats from ever being taken over.
+   - Keep at most one open category 1 chat per member: the mobile app reuses the member's newest
+     open chat, while the CRM's current service chat for that member is their oldest waiting one,
+     so with two open chats the member and the agent can end up in different chats.
+
+   Import as open only the few chats that really are still open.
 5. **Promotion (category 2): at most one `active` chat per member, `chat_ticket = 'Promotion'`.**
    Not enforced by the database.
-6. **`chat_ticket`** for categories 1 and 3: 12 random digits written as `NNNN-NNNN-NNNN`
-   (e.g. `4821-0937-1156`). The database does not require it to be unique, but people use it to
+6. **`chat_ticket`** for categories 1 and 3: 12 random characters (uppercase A–Z and 0–9) written
+   as `XXXX-XXXX-XXXX` (e.g. `K4ZQ-09B7-1A5C`). The database does not require it to be unique, but people use it to
    refer to a chat, so keep it unique. Old ticket numbers may be kept if they fit in 50 characters.
 7. **Text message:** `content_type = 1`, the text in `message`, `content_url` and `metadata` NULL.
 8. **File message:** `content_type = 2`, `message` NULL,
    `content_url = 'uploads/chat/<epoch milliseconds>_<file name>'` (relative: no leading `/`, no
-   host), `metadata = '{"fileName": "<file name>", "size": <bytes>}'`. Copy the file itself to that
-   path inside the `chat_uploads` volume (mounted at `/app/uploads` in the app container); the app
-   serves it at `<app base URL>/uploads/chat/...`. Files that only exist at an old URL (old server,
+   host), `metadata = '{"fileName": "<file name>", "size": <bytes>}'`. Copy the file itself to
+   `/app/uploads/chat/<epoch milliseconds>_<file name>` in the app container (for example
+   `docker cp <file> <app container>:/app/uploads/chat/`); that is `chat/...` at the root of the
+   `chat_uploads` volume, which is mounted at `/app/uploads`. The app serves it at
+   `<app base URL>/uploads/chat/...`. Files that only exist at an old URL (old server,
    cloud storage) must be downloaded, stored this way and their URL rewritten; full URLs in
    `content_url` are not what the app and its clients are built for.
 9. **`metadata` must be valid JSON or NULL.** Anything else fails with
@@ -265,11 +279,19 @@ by the app, so the database accepts rows that break them and the app then behave
 11. **Read state:** `read_at` NULL means unread. The mobile app's unread badge counts `admin`
     messages with `read_at` NULL, so set `read_at` (for example to the message's `created_at`) on
     old messages that should not show as unread.
-12. **Time zone.** The app writes times with the database server's `NOW()`, so every timestamp is in
-    the database server's local time, not UTC (the bundled `docker-compose.with-db.yml` runs it
-    with `TZ=Asia/Jakarta`). Import times in that same zone; check it with
-    `SELECT @@global.time_zone, @@system_time_zone, NOW();`. Times in the wrong zone shift every chat,
-    and the CRM waiting list (§3, `max_waiting_minutes`) compares them with the current time.
+12. **Time zone.** The time columns are `timestamp`: the database stores them in UTC and converts
+    them from and to the time zone of each connection (`@@session.time_zone`). The app connects
+    with the server default, so it reads and writes the database server's local time (the bundled
+    `docker-compose.with-db.yml` runs it with `TZ=Asia/Jakarta`). Either leave the import
+    connection at the server default and give server-local times, or run
+    `SET time_zone = '+00:00';` first and give UTC times (dumps made by mysqldump or HeidiSQL do
+    this themselves). Check from the import connection with
+    `SELECT @@session.time_zone, @@global.time_zone, @@system_time_zone, NOW();`. Times in the wrong
+    zone shift every chat, and the CRM waiting list (§3, `max_waiting_minutes`) compares them with
+    the current time. `list_chat_admin_history.redirect_date` is `datetime` and is not converted.
+13. **Referrer:** set `user_referrer_id` / `user_referrer_name` on category 1 and 3 chats to the
+    member's sales person. The CRM's sales view lists chats by `user_referrer_id`, so chats without
+    it do not show there.
 
 ---
 
@@ -287,19 +309,21 @@ be filled from old data or left empty:
 
 ## 6. Known issues
 
-1. **`list_chats.updated_at` does not exist, but the app writes it.** Changing a chat's status
-   through the REST API and assigning an agent to a chat both run
-   `UPDATE list_chats SET ..., updated_at = NOW() ...`, which fails with
-   `ERROR 1054 (42S22): Unknown column 'updated_at' in 'field list'`. No `sql/` file creates the
-   column. An import should not create or rely on it.
-2. **On MySQL 8.0, `07_dbchanges_202610191417.sql` fails at its last step** with
-   `ERROR 1215 (HY000): Cannot add foreign key constraint`. MySQL 8.0 does not allow the stored
-   generated column `sales_chat_key` on `category_id`, whose foreign key has `ON UPDATE CASCADE`;
-   MariaDB does. The result on MySQL 8.0: duplicate Inside Sales chats are removed but
-   `sales_chat_key` and `uq_list_chats_sales_chat` are not created, so rules 2 and 3 above are not
-   enforced. With `docker-compose.with-db.yml` (MySQL 8.0) the database setup stops at that file,
-   so `08_*` and `09_*` do not run either (`list_chat_config` is missing). Everything in this
-   document was checked on MariaDB 10.4, where all files run.
+1. **`list_chats.updated_at` does not exist, but the app writes it.** Assigning an agent through
+   the `assigned_admin_chat` socket event runs `UPDATE list_chats SET ..., updated_at = NOW() ...`,
+   which fails with `ERROR 1054 (42S22): Unknown column 'updated_at' in 'field list'`. The error is
+   only logged: the chat stays unassigned. No `sql/` file creates the column. An import should not
+   create or rely on it.
+2. **`07_dbchanges_202610191417.sql` stops at its last step on MySQL 8.0 and on newer MariaDB.**
+   MySQL 8.0 fails with `ERROR 1215 (HY000): Cannot add foreign key constraint`; MariaDB 10.11
+   with ``ERROR 1901 (HY000): Function or expression 'category_id' cannot be used in the GENERATED ALWAYS AS clause of `sales_chat_key` ``.
+   Both reject the stored generated column `sales_chat_key` on `category_id`, whose foreign key
+   has `ON UPDATE CASCADE`. Only older MariaDB (10.4 tested) runs every file. Where it fails,
+   duplicate Inside Sales chats are removed but `sales_chat_key` and `uq_list_chats_sales_chat`
+   are not created: the database does not enforce rules 2 and 3, and the import itself must keep
+   one category 3 chat per member. With `docker-compose.with-db.yml` (MySQL 8.0) the database
+   setup stops at that file, so `08_*` and `09_*` do not run either (`list_chat_config` is
+   missing). Everything in this document was checked on MariaDB 10.4.
 
 ---
 

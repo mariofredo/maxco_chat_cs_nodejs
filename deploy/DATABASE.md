@@ -1,7 +1,8 @@
 # Maxco Chat CS — Database Reference
 
 For teams that read or fill this database directly, for example to move chat data from an older
-system into this app. It describes the database created by the files in `sql/`.
+system into this app. It describes the database created by the files in `sql/`. The same
+structure in one runnable file, with the required reference rows: [`schema.sql`](schema.sql).
 
 - Database name: `maxco_chat_im` (must match `MYSQLDATABASE` in `.env`), charset `utf8mb4`.
 - Server: MySQL 8.0. MariaDB also works (tested on 10.4 and 10.11).

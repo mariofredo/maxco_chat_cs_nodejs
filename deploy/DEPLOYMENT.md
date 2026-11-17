@@ -18,6 +18,7 @@ deploy/
 ├── check-endpoints.sh            # smoke test of a running deployment (§7)
 ├── DEPLOYMENT.md                 # this document
 ├── DATABASE.md                   # database reference (tables, columns, import rules)
+├── schema.sql                    # the whole database structure in one file (for reference / test databases)
 ├── images/database-diagram.png   # table diagram used by DATABASE.md
 ├── sql/
 │   ├── 01_schema.sql             # base schema (required, run first)

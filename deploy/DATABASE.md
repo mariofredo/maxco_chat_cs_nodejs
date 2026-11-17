@@ -1,17 +1,13 @@
 # Maxco Chat CS — Database Reference
 
 For teams that read or fill this database directly, for example to move chat data from an older
-system into this app. It describes the database as it is **after every file in `sql/` has run**
-(`01_schema.sql` through `09_dbchanges_202610231200.sql`).
+system into this app. It describes the database created by the files in `sql/`.
 
 - Database name: `maxco_chat_im` (must match `MYSQLDATABASE` in `.env`), charset `utf8mb4`.
-- Server: checked on MariaDB 10.4, where every file runs. On MySQL 8.0 and newer MariaDB (10.11
-  confirmed), `07_dbchanges_202610191417.sql` stops part-way: read §6 before choosing a server.
-  Before relying on rules 2 and 3 in §4, check that `SHOW CREATE TABLE list_chats` lists
-  `sales_chat_key` and `uq_list_chats_sales_chat`.
-- Types below are shown as MariaDB reports them; MySQL 8.0 shows the same columns without display
-  widths (`bigint` for `bigint(20)`, `int` for `int(11)`). `list_messages.metadata` is `longtext`
-  holding JSON on both.
+- Server: MySQL 8.0. MariaDB also works (tested on 10.4 and 10.11).
+- Types and defaults below are shown as MySQL 8.0 reports them. MariaDB shows the same columns
+  with display widths (`bigint(20)`, `int(11)`) and writes `current_timestamp()` for
+  `CURRENT_TIMESTAMP`. `list_messages.metadata` is `longtext` holding JSON on both.
 
 ---
 
@@ -68,9 +64,9 @@ Customer Service chats after old ones are closed).
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `id` | `bigint(20)` | no | auto increment | Chat ID. Messages point to it. |
+| `id` | `bigint` | no | auto increment | Chat ID. Messages point to it. |
 | `chat_ticket` | `varchar(50)` | yes | NULL | Ticket number shown to people, e.g. `K4ZQ-09B7-1A5C`; promotion chats hold the text `Promotion`. Format in §4. |
-| `category_id` | `int(11)` | no | — | Chat category, see `list_chat_category` (1 Customer Service, 2 Announcement, 3 Inside Sales). |
+| `category_id` | `int` | no | — | Chat category, see `list_chat_category` (1 Customer Service, 2 Announcement, 3 Inside Sales). |
 | `user_id` | `varchar(100)` | no | — | Member ID from the client's member system. |
 | `user_name` | `varchar(100)` | yes | NULL | Member's display name when the chat was opened. |
 | `user_referrer_id` | `varchar(100)` | yes | NULL | ID of the sales person the member belongs to (their referrer), as sent by the mobile app. Stored on Customer Service and Inside Sales chats; the Inside Sales chat is with this person, and the CRM's sales view lists chats by it. |
@@ -78,9 +74,9 @@ Customer Service chats after old ones are closed).
 | `admin_id` | `varchar(100)` | yes | NULL | CRM ID of the CS / Sales person handling the chat. NULL while nobody has taken it. |
 | `admin_name` | `varchar(100)` | yes | NULL | Display name of that person. |
 | `status` | `enum('pending','active','closed')` | yes | `'pending'` | `pending` = waiting for an agent to take it; `active` = taken (Inside Sales and promotion chats start `active`); `closed` = finished. |
-| `created_at` | `timestamp` | no | `current_timestamp()` | When the chat was opened. |
+| `created_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | When the chat was opened. |
 | `closed_at` | `timestamp` | yes | NULL | When the chat was closed. NULL while open. |
-| `department_id` | `int(11)` | yes | NULL | Not used by the current app (§5). |
+| `department_id` | `int` | yes | NULL | Not used by the current app (§5). |
 | `sales_chat_key` | `varchar(100)` | yes | generated | Computed by the database: `user_id` when `category_id = 3`, otherwise NULL (`STORED`). Its unique key allows one Inside Sales chat per member. Never insert or update it (§4). |
 
 Keys and indexes:
@@ -89,7 +85,7 @@ Keys and indexes:
 - `uq_list_chats_sales_chat` — unique on `sales_chat_key`: at most one category 3 chat per `user_id`.
   NULLs do not collide, so categories 1 and 2 are not limited by it.
 - `FK_list_chats_list_chat_category` — foreign key `category_id` → `list_chat_category.category_id`,
-  `ON UPDATE CASCADE`, delete restricted.
+  `ON UPDATE RESTRICT`, `ON DELETE RESTRICT` (a category in use cannot be renumbered or deleted).
 - `idx_list_chats_user_id` — on `user_id` (chat list of one member).
 
 ### `list_messages`
@@ -98,15 +94,15 @@ Every message of every chat, oldest to newest by `created_at`, then `id`.
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `id` | `bigint(20)` | no | auto increment | Message ID. Breaks ties between messages with the same second in `created_at`. |
-| `chat_id` | `bigint(20)` | no | — | The chat, `list_chats.id`. |
+| `id` | `bigint` | no | auto increment | Message ID. Breaks ties between messages with the same second in `created_at`. |
+| `chat_id` | `bigint` | no | — | The chat, `list_chats.id`. |
 | `sender_type` | `enum('user','admin')` | no | — | `user` = sent by the member (mobile app); `admin` = sent by CS / Sales (CRM). |
 | `sender_id` | `varchar(100)` | no | — | Member ID (when `user`) or CRM ID (when `admin`). |
 | `sender_name` | `varchar(100)` | yes | NULL | Sender's display name at sending time. |
 | `message` | `text` | yes | NULL | The text of a text message. |
 | `content_url` | `text` | yes | NULL | File messages: path of the stored file, e.g. `uploads/chat/1763358000000_invoice.pdf`. NULL for text. |
-| `content_type` | `int(11)` | yes | NULL | Message type, see `list_content_type`: 1 = Text, 2 = File. Set it on every row: the CRM's message lists skip messages where it is NULL. |
-| `created_at` | `timestamp` | no | `current_timestamp()` | When the message was sent. |
+| `content_type` | `int` | yes | NULL | Message type, see `list_content_type`: 1 = Text, 2 = File. Set it on every row: the CRM's message lists skip messages where it is NULL. |
+| `created_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | When the message was sent. |
 | `read_at` | `timestamp` | yes | NULL | When the other side read it. NULL = unread. |
 | `metadata` | `longtext` | yes | NULL | JSON (the database rejects text that is not valid JSON). File messages: `{"fileName": "...", "size": <bytes>}`. |
 
@@ -126,12 +122,12 @@ version of the app; the current app neither writes nor reads it (§5).
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `id` | `bigint(20)` | no | auto increment | Row ID. |
-| `chat_id` | `bigint(20)` | no | — | The chat, `list_chats.id`. |
+| `id` | `bigint` | no | auto increment | Row ID. |
+| `chat_id` | `bigint` | no | — | The chat, `list_chats.id`. |
 | `admin_id` | `varchar(100)` | no | — | CRM ID of the agent. |
-| `assigned_at` | `timestamp` | no | `current_timestamp()` | When the agent got the chat. |
+| `assigned_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | When the agent got the chat. |
 | `unassigned_at` | `timestamp` | yes | NULL | When the agent stopped handling it. |
-| `redirect_to_department_id` | `int(11)` | yes | NULL | Department the chat was passed to. |
+| `redirect_to_department_id` | `int` | yes | NULL | Department the chat was passed to. |
 | `redirect_date` | `datetime` | yes | NULL | When it was passed on. |
 
 Keys and indexes:
@@ -145,7 +141,7 @@ Lookup of message types. Its rows are required (§3).
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `content_type_id` | `int(11)` | no | auto increment | Type number used in `list_messages.content_type`. |
+| `content_type_id` | `int` | no | auto increment | Type number used in `list_messages.content_type`. |
 | `content_type_name` | `varchar(100)` | no | — | Type name. |
 
 Keys and indexes:
@@ -158,7 +154,7 @@ Lookup of chat categories. Its rows are required (§3).
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `category_id` | `int(11)` | no | auto increment | Category number used in `list_chats.category_id`. |
+| `category_id` | `int` | no | auto increment | Category number used in `list_chats.category_id`. |
 | `category_name` | `varchar(100)` | no | — | Category name. |
 
 Keys and indexes:
@@ -172,12 +168,12 @@ for new chat messages. Not linked to the other tables by a foreign key.
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
-| `id` | `bigint(20)` | no | auto increment | Row ID. |
+| `id` | `bigint` | no | auto increment | Row ID. |
 | `user_id` | `varchar(100)` | no | — | Member ID (same as `list_chats.user_id`). |
 | `fcm_token` | `varchar(1024)` | no | — | FCM registration token of one device. The app keeps each token on one member only: registering it again moves it. |
 | `platform` | `varchar(20)` | no | `'android'` | Device platform as sent by the app, e.g. `android`, `ios`. |
-| `created_at` | `timestamp` | no | `current_timestamp()` | When the token was first registered. |
-| `updated_at` | `timestamp` | no | `current_timestamp()` | Set by the database on every change (`ON UPDATE current_timestamp()`). |
+| `created_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | When the token was first registered. |
+| `updated_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | Set by the database on every change (`ON UPDATE CURRENT_TIMESTAMP`). |
 
 Keys and indexes:
 
@@ -194,7 +190,7 @@ App settings as key / value pairs. Its row is required (§3).
 | `config_key` | `varchar(100)` | no | — | Setting name. |
 | `config_value` | `varchar(255)` | no | — | Setting value, stored as text (numbers too). |
 | `description` | `varchar(255)` | yes | NULL | What the setting does. |
-| `updated_at` | `timestamp` | no | `current_timestamp()` | Set by the database on every change (`ON UPDATE current_timestamp()`). |
+| `updated_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | Set by the database on every change (`ON UPDATE CURRENT_TIMESTAMP`). |
 
 Keys and indexes:
 
@@ -241,15 +237,14 @@ by the app, so the database accepts rows that break them and the app then behave
    46 (`list_chats`) and 211 (`list_messages`); after explicit IDs are inserted, numbering continues
    above the highest one.
 2. **Inside Sales (category 3): one chat per member, ever.** Enforced by the database through
-   `sales_chat_key` (where the key exists, see §6.2; otherwise the import must check this itself),
-   and it counts closed chats too. A second one fails with
-   `ERROR 1062 (23000): Duplicate entry '<user_id>' for key 'uq_list_chats_sales_chat'`.
+   `sales_chat_key`, and it counts closed chats too. A second one fails with
+   `ERROR 1062 (23000): Duplicate entry '<user_id>' for key 'list_chats.uq_list_chats_sales_chat'`.
    Import it as `active`, with `user_referrer_id` / `user_referrer_name` and `admin_id` /
    `admin_name` set to the member's sales person: the CRM only opens `active` Inside Sales chats, and
    a closed one blocks a new one from being created.
 3. **Never write `sales_chat_key`.** The database computes it. Giving it a value fails with
-   `ERROR 1906 (HY000): The value specified for generated column 'sales_chat_key' in table 'list_chats' has been ignored`
-   (in strict SQL mode, the default; otherwise the value is silently ignored).
+   `ERROR 3105 (HY000): The value specified for generated column 'sales_chat_key' in table 'list_chats' is not allowed.`
+   (MariaDB: `ERROR 1906`, or a silently ignored value outside strict SQL mode).
 4. **Customer Service (category 1): import old conversations as `closed`**, with `closed_at` set.
    The database accepts open (`pending` / `active`) ones, but the app does not cope with many:
    - Every old open chat lands in the CRM waiting list (its last CS / Sales message is older than
@@ -277,7 +272,7 @@ by the app, so the database accepts rows that break them and the app then behave
    cloud storage) must be downloaded, stored this way and their URL rewritten; full URLs in
    `content_url` are not what the app and its clients are built for.
 9. **`metadata` must be valid JSON or NULL.** Anything else fails with
-   ``ERROR 4025 (23000): CONSTRAINT `list_messages.metadata` failed for `maxco_chat_im`.`list_messages` ``.
+   `ERROR 3819 (HY000): Check constraint 'list_messages_chk_1' is violated.` (MariaDB: `ERROR 4025`).
 10. **Sender:** `sender_type = 'user'` with the member ID in `sender_id`, or `sender_type = 'admin'`
     with the CRM ID; `sender_name` = display name.
 11. **Read state:** `read_at` NULL means unread. The mobile app's unread badge counts `admin`
@@ -308,37 +303,3 @@ be filled from old data or left empty:
 - the whole `list_chat_admin_history` table (`chat_id`, `admin_id`, `assigned_at`,
   `unassigned_at`, `redirect_to_department_id`, `redirect_date`). If it is filled, its `chat_id`
   must exist in `list_chats` (foreign key).
-
----
-
-## 6. Known issues
-
-1. **`list_chats.updated_at` does not exist, but the app writes it.** Assigning an agent through
-   the `assigned_admin_chat` socket event runs `UPDATE list_chats SET ..., updated_at = NOW() ...`,
-   which fails with `ERROR 1054 (42S22): Unknown column 'updated_at' in 'field list'`. The error is
-   only logged: the chat stays unassigned. No `sql/` file creates the column. An import should not
-   create or rely on it.
-2. **`07_dbchanges_202610191417.sql` stops at its last step on MySQL 8.0 and on newer MariaDB.**
-   MySQL 8.0 fails with `ERROR 1215 (HY000): Cannot add foreign key constraint`; MariaDB 10.11
-   with ``ERROR 1901 (HY000): Function or expression 'category_id' cannot be used in the GENERATED ALWAYS AS clause of `sales_chat_key` ``.
-   Both reject the stored generated column `sales_chat_key` on `category_id`, whose foreign key
-   has `ON UPDATE CASCADE`. Only older MariaDB (10.4 tested) runs every file. Where it fails,
-   duplicate Inside Sales chats are removed but `sales_chat_key` and `uq_list_chats_sales_chat`
-   are not created: the database does not enforce rules 2 and 3, and the import itself must keep
-   one category 3 chat per member. With `docker-compose.with-db.yml` (MySQL 8.0) the database
-   setup stops at that file, so `08_*` and `09_*` do not run either (`list_chat_config` is
-   missing). Everything in this document was checked on MariaDB 10.4.
-
----
-
-## 7. Where each table comes from
-
-| Table | Created by | Changed by |
-|---|---|---|
-| `list_chats` | `01_schema.sql` | `02_migrations.sql` (`user_name`, `admin_name`, `category_id` + foreign key), `04_dbchanges_202610121639.sql` (`user_referrer_id`), `06_dbchanges_202610190950.sql` (`user_referrer_name`), `07_dbchanges_202610191417.sql` (removes duplicate Inside Sales chats, adds `sales_chat_key` + `uq_list_chats_sales_chat`), `08_dbchanges_202610221020.sql` (`idx_list_chats_user_id`) |
-| `list_messages` | `01_schema.sql` | `02_migrations.sql` (`sender_name`), `08_dbchanges_202610221020.sql` (`idx_list_messages_chat_created`) |
-| `list_chat_admin_history` | `01_schema.sql` | — |
-| `list_content_type` | `01_schema.sql` (with rows 1, 2) | — |
-| `list_chat_category` | `02_migrations.sql` (with rows 1, 2) | `05_dbchanges_202610161456.sql` (row 3) |
-| `list_user_devices` | `03_dbchanges_202610051115.sql` | — |
-| `list_chat_config` | `09_dbchanges_202610231200.sql` (with `max_waiting_minutes`) | — |

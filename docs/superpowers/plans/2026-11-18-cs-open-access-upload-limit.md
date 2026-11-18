@@ -307,3 +307,94 @@ Expected: all PASS, no type errors.
 git add src/sockets/sendMessageErrors.ts src/middleware/bodyErrors.ts src/sockets/chatSocket.ts src/controllers/crmChatController.ts src/app.ts test/upload/upload-errors.test.ts docs/integration-guide-app.md docs/integration-guide-crm.md
 git commit -m "feat: clear errors for rejected uploads and room for 50 MB files"
 ```
+
+---
+
+### Task 4: Category filter on the user's chat list
+
+**Files:**
+- Create: `src/utils/categoryIds.ts`
+- Modify: `src/services/chatService.ts` (`fetchUserChats`)
+- Modify: `src/controllers/chatController.ts` (`getUserChats` reads `req.query.categoryIds`, `getUserSalesChat` reads `req.body.categoryIds`)
+- Modify: `docs/integration-guide-app.md` (section "Chat list filter")
+- Test: `test/chat/category-ids.test.ts`, `test-db/user-chats-filter.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `parseCategoryIds(input: unknown): number[]` in `src/utils/categoryIds.ts`. It accepts:
+    - an array,
+    - a comma-separated string,
+    - a number.
+
+    It keeps only finite whole numbers `> 0` and removes duplicates. Anything else returns `[]`, which means **no filter**. This is unlike `normalizeCategoryIds` in `crmChatService.ts`, which defaults to `[1]`. Leave that function as it is.
+  - `fetchUserChats(userId: string, page?: number, pageSize?: number, categoryIds: number[] = [])`. A non-empty `categoryIds` adds `AND category_id IN (...)` to both the list query and the count.
+
+- [ ] **Step 1: Write the failing tests**
+
+`test/chat/category-ids.test.ts`:
+
+```ts
+test("parseCategoryIds reads strings, arrays and numbers", () => {
+  assert.deepEqual(parseCategoryIds("1"), [1]);
+  assert.deepEqual(parseCategoryIds("1, 2,2"), [1, 2]);
+  assert.deepEqual(parseCategoryIds(["3", 1]), [3, 1]);
+  assert.deepEqual(parseCategoryIds(2), [2]);
+});
+
+test("parseCategoryIds means no filter for empty or invalid input", () => {
+  for (const raw of [undefined, null, "", "abc", "0", "-1", "1.5", {}, []]) {
+    assert.deepEqual(parseCategoryIds(raw), [], String(raw));
+  }
+});
+```
+
+`test-db/user-chats-filter.test.ts` seeds one user (`userId: "test-awc-uf"`) with chats in categories 1 (closed), 1 (active), 2 and 3:
+
+```ts
+test("no filter returns every category", async () => {
+  const r = await fetchUserChats("test-awc-uf");
+  assert.equal(r.chats.length, 4);
+});
+
+test("categoryIds [1] returns only the Customer Support tickets, total included", async () => {
+  const r = await fetchUserChats("test-awc-uf", 1, 20, [1]);
+  assert.deepEqual(r.chats.map((c) => c.category_id), [1, 1]);
+  assert.equal(r.total, 2);
+});
+
+test("controller reads ?categoryIds", async () => {
+  await getUserChats({ params: { userId: "test-awc-uf" }, query: { categoryIds: "2,3" } } as any, res as any);
+  assert.deepEqual(sent.body.data.map((c: any) => c.category_id).sort(), [2, 3]);
+  assert.equal(sent.body.pagination.total, 2);
+});
+```
+
+- [ ] **Step 2: Run the tests and confirm they fail**
+
+Run: `node --import tsx --test test/chat/category-ids.test.ts`
+Expected: FAIL, the module is missing.
+
+Run: `node --import tsx --env-file=.env.local --test --test-concurrency=1 test-db/user-chats-filter.test.ts`
+Expected: the filter tests FAIL (4 rows come back instead of 2). The "no filter" test PASSes. It is a guard.
+
+- [ ] **Step 3: Implement the parser, the service parameter and the two controller reads**
+
+- [ ] **Step 4: Run all checks**
+
+Run: `npm test && npm run test:db && npx tsc --noEmit`
+Expected: all PASS.
+
+- [ ] **Step 5: Document in the app guide**
+
+Cover:
+- `?categoryIds=1` on `GET /api/chats/user/:userId`, and `categoryIds` in the body of `POST /api/chats/user`;
+- the accepted forms;
+- no value means every category;
+- `pagination.total` follows the filter.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/utils/categoryIds.ts src/services/chatService.ts src/controllers/chatController.ts test/chat/category-ids.test.ts test-db/user-chats-filter.test.ts docs/integration-guide-app.md
+git commit -m "feat: optional category filter on the user's chat list"
+```

@@ -58,6 +58,16 @@ Dua masukan dari review live chat:
    - DB test untuk `fetchActiveChats`: chat yang dibalas CS lain ikut muncul.
    - DB test: `create_service_chat` tidak lagi 401.
 
+## Tambahan: filter kategori di daftar chat user
+
+`GET /api/chats/user/:userId` dan `POST /api/chats/user` mengembalikan semua chat milik user dari semua kategori, termasuk setiap tiket CS yang sudah closed. App yang ingin menampilkan daftar tiket CS harus menyaringnya sendiri.
+
+- Tambahkan parameter opsional `categoryIds`:
+  - GET: lewat query string, misalnya `?categoryIds=1` atau `?categoryIds=1,2`.
+  - POST: lewat body, sebagai string `"1,2"` atau array `[1, 2]`.
+- Kalau parameter ini tidak dikirim, kosong, atau tidak valid, semua kategori dikembalikan (perilaku sekarang). Jadi pemanggil lama tidak berubah.
+- Filter berlaku untuk daftar chat sekaligus untuk `pagination.total`.
+
 ## Dampak ke app dan CRM
 
 - **CRM:**

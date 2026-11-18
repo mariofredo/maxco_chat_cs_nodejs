@@ -213,6 +213,8 @@ Disable the input of closed Customer Support chats, and show an error if `send_m
 
 ### 9.4 Closing a chat
 
-`chat_closed` now carries `reason`: `"agent"` when CS closes the chat (socket `close_chat`), `"auto_no_reply"` for the automated close.
+`chat_closed` now carries `reason`: `"agent"` when CS closes the chat, `"auto_no_reply"` for the automated close.
+
+`POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
 
 A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).

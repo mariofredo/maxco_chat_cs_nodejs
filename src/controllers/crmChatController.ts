@@ -157,6 +157,8 @@ export async function crmCloseChat(req: Request, res: Response) {
     const success = await closeChatById(chatId);
     if (success) {
       const data = await fetchChatById(chatId);
+      // Tell the room (the user's app included), same as the socket close_chat.
+      getIO().to(`chat_${chatId}`).emit("chat_closed", { chatId, chatData: data, reason: "agent" });
       res.json({ success: true, message: "Chat closed successfully", data: data });
     } else {
       res.status(404).json({ success: false, message: "Chat not found or could not be closed" });

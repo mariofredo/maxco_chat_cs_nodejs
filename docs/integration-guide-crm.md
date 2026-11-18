@@ -218,3 +218,12 @@ Disable the input of closed Customer Support chats, and show an error if `send_m
 `POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
 
 A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).
+
+## 10. Assigned list and PIC
+
+The PIC (`admin_id` / `admin_name` of a chat) is informative only. Every CS can see, open and reply to every chat.
+
+- `POST /api/chats/crm/chat/active` (the Assigned tab) now returns **every** chat that any CS has replied to within `max_waiting_minutes`, not only the chats of the CS who is logged in. Show the PIC from `admin_name` on each row. `last_message_admin*` is the latest reply of any CS. `adminId` is still accepted in the body but no longer filters.
+- `POST /api/chats/crm/create_service_chat` no longer answers `401 "Chat already assigned to another admin"`. It returns the user's open chat to any CS.
+- Replying to a chat handled by another CS stores the message as usual. Within `max_waiting_minutes` it does not change the PIC (same takeover rule as before).
+- If the CRM disables the input when `admin_id` is not the logged-in CS, remove that check.

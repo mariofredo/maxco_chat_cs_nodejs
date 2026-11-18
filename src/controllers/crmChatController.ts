@@ -227,12 +227,8 @@ export const createUserServiceChat = async (req: Request, res: Response) => {
         status: chat.status,
         created_at: chat.created_at
       });
-    } else if(admin_id != chat.admin_id) {
-      return res.status(401).json({
-        success: false,
-        message: "Chat already assigned to another admin"
-      });
     }
+    // Any CS may open a chat handled by another CS (the PIC is informative).
 
     const dataChat = await fetchChatById(chat.id.toString());
 

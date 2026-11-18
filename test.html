@@ -449,9 +449,14 @@
       log(side, 'system', `chat_closed untuk chat ${d.chatId}, bukan tiket aktif (${chatId() || 'kosong'}): diabaikan.`);
       return;
     }
-    const ticket = (d.chatData && d.chatData.chat_ticket) || d.chatId;
     const reason = CLOSE_REASON[d.reason] || d.reason || 'tanpa alasan';
-    addDivider(side, `🔒 Ticket #${ticket} is closed (${reason})`, 'closed');
+    // Only Customer Support chats are tickets: a message to a closed CS ticket
+    // opens a new one. A closed Promotion / Sales chat keeps its messages.
+    if (!d.chatData || Number(d.chatData.category_id) !== 1) {
+      addDivider(side, `🔒 Chat ditutup (${reason})`, 'closed');
+      return;
+    }
+    addDivider(side, `🔒 Ticket #${d.chatData.chat_ticket} is closed (${reason})`, 'closed');
     if (side === 'app') addDivider(side, 'Send a message to open a new ticket.', 'hint');
   }
 

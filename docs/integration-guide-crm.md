@@ -193,3 +193,26 @@ Settings live in `list_chat_config` and apply without a restart:
 |---|---|
 | `auto_close_minutes` | minutes; `0` = off. Ships as `0`, set to `10` after the app and CRM releases. |
 | `auto_close_message` | text template, `{name}` = user name (or "there"), `{minutes}`. Max 255 characters. |
+
+### 9.2 New ticket
+
+When a user writes to a closed Customer Support ticket, the server stores the message in that user's open ticket (a new `pending` chat with a new ticket number when there is none). The CRM sees it as:
+
+- `chat_room_created` (existing event, same payload as today) for a ticket that was just created, so it appears in the Waiting list;
+- `new_message` for the new chat id, with `previous_chat_id` (the closed chat) and `is_new_ticket`. Both fields are `null` / `false` on normal messages.
+
+### 9.3 Replies to a closed ticket
+
+An admin `send_message` to a **closed Customer Support** chat is rejected: nothing is stored or broadcast, and only the sending socket receives:
+
+```json
+{ "event": "send_message_error", "payload": { "chat_id": 10, "reason": "chat_closed" } }
+```
+
+Disable the input of closed Customer Support chats, and show an error if `send_message_error` arrives. Closed Promotion and Inside Sales chats are unchanged.
+
+### 9.4 Closing a chat
+
+`chat_closed` now carries `reason`: `"agent"` when CS closes the chat (socket `close_chat`), `"auto_no_reply"` for the automated close.
+
+A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).

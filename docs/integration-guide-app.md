@@ -186,3 +186,21 @@ Render `sender_type: 'system'` as the **Automated message** bubble (`metadata.ty
 `chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2).
 
 The feature ships switched off (`auto_close_minutes = 0`). It is switched on after this app version is released.
+
+### 9.2 New ticket
+
+The server opens the new ticket. The app does not call anything extra:
+
+1. Always send the user's message with `send_message` to the **current** Customer Support chat id, even when that ticket is closed. Keep the input enabled after `chat_closed`.
+2. When the addressed ticket is closed, the server stores the message in the user's open ticket (it creates one, with a new ticket number, when there is none), moves this socket into that ticket's room, and sends:
+   - `new_message` to `chat_<new id>` and `user_<userId>` (each socket receives it once), with:
+     - `chat_id`: the new ticket's chat id,
+     - `previous_chat_id`: the closed chat the message was addressed to,
+     - `is_new_ticket`: `true` when the ticket was just created,
+     - `chat_data`: the new ticket's row (`chat_ticket`, `status: "pending"`, ...);
+   - `new_user_chatroom` `{ chatData }` to `user_<userId>`, so the user's other devices can `join_chat` the new room.
+3. On a `new_message` whose `previous_chat_id` is set (or whose `chat_id` differs from the current one), make that chat the current one and draw "New ticket #<chat_ticket> opened" before the message.
+
+Two quick messages to a closed ticket open one ticket, not two. For `new_message` of a normal message, `previous_chat_id` is `null` and `is_new_ticket` is `false`.
+
+Promotion and Sales chats keep today's behavior.

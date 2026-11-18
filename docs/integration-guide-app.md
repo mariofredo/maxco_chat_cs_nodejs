@@ -227,7 +227,12 @@ Promotion and Sales chats keep today's behavior.
   - "New ticket #`chat_ticket` opened" at `created_at`,
   - "Ticket #`chat_ticket` is closed" at `closed_at` (when not null).
 
-  Times have one-second precision, so break ties this way: the "opened" marker goes **before** messages with the same time, the "closed" marker goes **after** them. The automated message is stored with exactly the ticket's `closed_at`, so it always shows just above "Ticket … is closed".
+  Times have one-second precision, and a user can write again in the same second as the automated close. Sort every marker and message by these keys, in order:
+  1. time;
+  2. the older ticket first (smaller `chat_id`);
+  3. inside one ticket: "opened" marker, then messages, then "closed" marker.
+
+  The automated message is stored with exactly the ticket's `closed_at`. With this order it shows just above "Ticket … is closed", and the next ticket's "opened" marker comes after that line.
 
   Older data can hold messages written to a ticket after it was closed. They show after its closed marker.
 - **`current`** is the user's latest Customer Support chat.

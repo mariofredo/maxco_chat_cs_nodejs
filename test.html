@@ -91,6 +91,20 @@
   .divider.closed { font-weight: 600; }
   .divider.hint { font-style: italic; }
   .divider.hint::before, .divider.hint::after { border-top: none; }
+  select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
+  .ticketlist { max-height: 200px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); margin-top: 6px; }
+  .ticketlist:empty::before { content: 'Belum dimuat. Klik "Chat saya" atau pilih kategori.'; display: block; color: var(--muted); font-size: 12px; padding: 10px; text-align: center; }
+  .ticket-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--text);
+    background: transparent; border: none; border-bottom: 1px solid var(--line); padding: 6px 10px; cursor: pointer; }
+  .ticket-row:hover { background: var(--soft); }
+  .ticket-row.current { background: var(--soft); box-shadow: inset 3px 0 0 var(--primary); }
+  .ticket-row .tno { font-weight: 700; }
+  .ticket-row .cat { color: var(--muted); }
+  .ticket-row .last { grid-column: 1 / -1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st { padding: 0 8px; border-radius: 999px; font-weight: 600; font-size: 11px; background: var(--theirs); color: var(--muted); }
+  .st.active { background: var(--ok-bg); color: var(--ok); }
+  .st.pending { background: var(--warn-bg); color: var(--text); }
+  .st.closed { background: var(--err-bg); color: var(--err); }
   .chathead { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0; background: var(--card); }
   .chathead + .chatbox { border-radius: 0 0 8px 8px; }
   .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
@@ -196,9 +210,19 @@
         <button class="btn" data-act="unread">Belum dibaca</button>
         <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
       </div>
+      <div class="sub">Daftar chat / tiket per kategori</div>
       <div class="row">
-        <label>Kategori untuk "Chat saya" <input id="categoryFilter" placeholder="kosong = semua; 1 = tiket CS; 1,2" autocomplete="off"></label>
+        <label>Kategori
+          <select id="categoryFilter" title="GET /api/chats/user/:userId?categoryIds=…">
+            <option value="">Semua kategori</option>
+            <option value="1">Customer Support (tiket)</option>
+            <option value="2">Promotion</option>
+            <option value="3">Inside Sales</option>
+          </select>
+        </label>
       </div>
+      <div class="ticketlist" id="ticketList" aria-live="polite"></div>
+      <div class="sub" id="ticketListInfo"></div>
     </div>
 
     <div class="group">
@@ -733,14 +757,53 @@
     }
   }
 
+  const CATEGORY_NAME = { 1: 'Customer Support', 2: 'Promotion', 3: 'Inside Sales' };
+
+  // Chats of the user (one row per ticket for Customer Support), optionally
+  // filtered by category. Clicking a row opens it: Chat ID + history.
   async function myChats() {
     const cats = val('categoryFilter');
     const filter = cats ? `&categoryIds=${encodeURIComponent(cats)}` : '';
     const r = await api('app', 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${paging()}${filter}`);
-    if (r.ok && r.json && Array.isArray(r.json.data)) {
-      const rows = r.json.data.map((c) => `#${c.id} kat ${c.category_id} ${c.chat_ticket} ${c.status}`);
-      log('app', 'rest', `Chat saya${cats ? ` (kategori ${cats})` : ''}: ${r.json.pagination ? r.json.pagination.total : rows.length} chat — ${rows.join(', ') || '-'}`);
+    const list = $('ticketList');
+    if (!r.ok || !r.json || !Array.isArray(r.json.data)) {
+      list.replaceChildren();
+      $('ticketListInfo').textContent = 'Gagal memuat daftar; lihat log.';
+      return;
     }
+    const rows = r.json.data;
+    list.replaceChildren(...rows.map(ticketRow));
+    const pg = r.json.pagination || {};
+    $('ticketListInfo').textContent = `${CATEGORY_NAME[cats] || (cats ? `Kategori ${cats}` : 'Semua kategori')}: ` +
+      `${pg.total ?? rows.length} chat · halaman ${pg.page ?? 1}${pg.hasMore ? ' (ada halaman berikutnya)' : ''}` +
+      (rows.length ? ' · klik baris untuk membuka' : ' · tidak ada chat');
+  }
+
+  function ticketRow(c) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'ticket-row' + (String(c.id) === chatId() ? ' current' : '');
+    row.dataset.chatId = String(c.id);
+    const tno = document.createElement('span'); tno.className = 'tno'; tno.textContent = `#${c.id} · ${c.chat_ticket || '-'}`;
+    const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`;
+    const st = document.createElement('span'); st.className = `st ${c.status}`; st.textContent = c.status;
+    const last = document.createElement('span'); last.className = 'last';
+    const when = c.last_message_time ? String(c.last_message_time).slice(0, 16) : String(c.created_at || '').slice(0, 16);
+    const text = Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
+    last.textContent = `${when} · ${text}`;
+    row.append(tno, cat, st, last);
+    row.title = `Buka chat ${c.id}`;
+    row.addEventListener('click', () => openChatFromList(c));
+    return row;
+  }
+
+  function openChatFromList(c) {
+    $('chatId').value = String(c.id);
+    log('app', 'system', `Chat ${c.id} (${CATEGORY_NAME[c.category_id] || c.category_id}, ${c.status}) dipilih dari daftar.`);
+    $('ticketList').querySelectorAll('.ticket-row').forEach((r) => r.classList.toggle('current', r.dataset.chatId === String(c.id)));
+    updateUI();
+    loadMessages('app');
+    if (connected('app')) joinRoom('app');
   }
 
   async function crmActive() {
@@ -842,6 +905,7 @@
   $('chatId').addEventListener('input', updateUI);
   $('appUserId').addEventListener('input', renderUserBadge);
   $('appUserName').addEventListener('input', renderUserBadge);
+  $('categoryFilter').addEventListener('change', myChats);   // reload the list for the chosen category
   for (const id of SAVED) $(id).addEventListener('change', () => store.set(id, $(id).value));
 
   // ---- UI state: enable/disable, status text, next-step hint ----

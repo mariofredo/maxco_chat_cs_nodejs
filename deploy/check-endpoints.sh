@@ -3,7 +3,7 @@
 # check-endpoints.sh — smoke test for a running Maxco Chat CS deployment
 #
 # Tells apart the three problems that look alike from the client app:
-#   OLD BUILD  routes added in 1.0.2 answer Express "Cannot GET/POST ..." 404
+#   OLD BUILD  routes added in 1.0.2 or 1.1.0 answer Express "Cannot GET/POST ..." 404
 #   DB ERROR   endpoints that query MySQL answer 500
 #   OPEN API   REST answers without an API key (CHAT_API_KEY not set)
 #
@@ -105,6 +105,8 @@ echo "3. Database"
 check "GET  /api/chats/user/:userId"           GET  "/api/chats/user/$USER_ID" 200
 check "GET  /api/chats/:chatId/messages"       GET  "/api/chats/$CHAT_ID/messages" "200 404"
 check "GET  /api/client/chat/unread/:userId"   GET  "/api/client/chat/unread/$USER_ID" 200
+# added in 1.1.0: a 404 "Cannot GET" here means a 1.0.x image is still running
+check "GET  /api/client/chat/support-thread"   GET  "/api/client/chat/support-thread/$USER_ID" 200
 check "GET  /api/chats/crm/config"             GET  /api/chats/crm/config 200
 
 echo

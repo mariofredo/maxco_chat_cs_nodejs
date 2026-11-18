@@ -171,3 +171,25 @@ Use `test.html`: the **App (user)** side plays the mobile app for you.
 6. On the App side of `test.html`, switch **Saya sedang di layar Live Chat** on and off: your chat list shows that user going Online and Offline, and the initial REST status matches.
 7. Type in the App side: your conversation header shows "... sedang mengetik…" and the indicator disappears when the user stops, sends, or after 5 seconds.
 8. Type in your conversation: the App side shows the indicator and clears it the same way.
+
+## 9. Tickets (Customer Support)
+
+Each Customer Support chat is one **ticket** (`chat_ticket`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Inside Sales chats are unchanged.
+
+### 9.1 Automated close
+
+The server closes a Customer Support chat by itself when it waits on the user: the latest message is from CS, nothing was written for `auto_close_minutes`, and that CS message is at most `auto_close_minutes + 60` minutes old (older chats are left for CS to close by hand). It then:
+
+1. stores an automated message and sends it as `new_message` to `chat_<id>`, with `sender_type: "system"`, `sender_id: "system"`, `sender_name: "Maxco Customer Support"`, `metadata: { "type": "auto_close" }`,
+2. sends `chat_closed` `{ chatId, chatData, reason: "auto_no_reply" }` to `chat_<id>`.
+
+- **Render `sender_type: "system"`** messages (in the conversation, in chat history and as `last_message` of a list row). If the CRM parses `sender_type` strictly (`user` / `admin` only), this must change before the backend is deployed.
+- A `system` message is not a CS reply: it does not count for the Assigned / Waiting rules.
+- The chat moves to the Closed list.
+
+Settings live in `list_chat_config` and apply without a restart:
+
+| Key | Value |
+|---|---|
+| `auto_close_minutes` | minutes; `0` = off. Ships as `0`, set to `10` after the app and CRM releases. |
+| `auto_close_message` | text template, `{name}` = user name (or "there"), `{minutes}`. Max 255 characters. |

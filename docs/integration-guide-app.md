@@ -157,3 +157,32 @@ Use `test.html`: the page plays the CRM side for you.
 6. Type in the app: the CRM header shows "... sedang mengetik…". Stop for 2 seconds, or send: it disappears.
 7. Type in the CRM page: the app shows the indicator, and it disappears after the CRM stops (or after 5 seconds).
 8. Turn Wi-Fi off and on during the Live Chat flow: after reconnect, the status and the user's online state are restored without reopening the screen.
+
+## 9. Tickets (Customer Support)
+
+Each Customer Support chat is one **ticket** (`chat_ticket`, for example `1234-5678-9012`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Sales chats are unchanged.
+
+### 9.1 Automated close
+
+The server closes a Customer Support chat by itself when it is waiting on the user:
+
+- the latest message in the chat is from CS (`sender_type: 'admin'`),
+- nothing was written for `auto_close_minutes` (10 in the design),
+- and that CS message is at most `auto_close_minutes + 60` minutes old. Older chats are left for CS to close by hand.
+
+When it closes a chat, the server:
+
+1. stores an automated message and sends it as a normal `new_message` to `chat_<id>`:
+   ```json
+   { "sender_type": "system", "sender_id": "system", "sender_name": "Maxco Customer Support",
+     "content_type": 1, "message": "Hi Priya, since we haven't received a reply ...",
+     "metadata": { "type": "auto_close" }, "chat_id": 10, "...": "same fields as any new_message" }
+   ```
+2. sends `chat_closed` `{ chatId, chatData, reason: "auto_no_reply" }` to `chat_<id>`,
+3. sends a push notification with the same text.
+
+Render `sender_type: 'system'` as the **Automated message** bubble (`metadata.type === 'auto_close'`). Never treat it as a message from the user. A `system` message also appears in chat history and as `last_message` of a chat.
+
+`chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2).
+
+The feature ships switched off (`auto_close_minutes = 0`). It is switched on after this app version is released.

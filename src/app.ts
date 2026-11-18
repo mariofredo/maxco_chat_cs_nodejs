@@ -10,6 +10,8 @@ import { registerPresenceSocket } from "./sockets/presenceSocket.js";
 import { registerTypingSocket } from "./sockets/typingSocket.js";
 import { setIO } from "./sockets/io.js";
 import { requireApiKey, requireSocketApiKey } from "./middleware/apiKey.js";
+import { runAutoClose } from "./services/autoCloseService.js";
+import { startNonOverlappingInterval } from "./utils/interval.js";
 import path from "path";
 
 
@@ -54,6 +56,10 @@ const io = new Server(server, {
 // Semua koneksi socket wajib bawa API key (auth/query/header)
 io.use(requireSocketApiKey);
 setIO(io);
+
+// Closes idle Customer Support chats (list_chat_config.auto_close_minutes,
+// 0 = off). One pass per minute, never two at once.
+startNonOverlappingInterval(runAutoClose, 60_000);
 
 // pasang handler socket
 io.on("connection", (socket) => {

@@ -259,3 +259,17 @@ A refused file is not stored. The sender receives:
 - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
 
 The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).
+
+## Chat list filter
+
+`GET /api/chats/user/:userId` and `POST /api/chats/user` return every chat of the user. That covers all categories, including each closed Customer Support ticket. Both accept an optional category filter:
+
+| Endpoint | How to send it |
+|---|---|
+| `GET /api/chats/user/:userId` | query `?categoryIds=1` or `?categoryIds=1,2` |
+| `POST /api/chats/user` | body `"categoryIds": "1,2"` or `"categoryIds": [1, 2]` |
+
+- `1` = Customer Support (tickets), `2` = Promotion, `3` = Inside Sales.
+- No value, an empty value or an invalid value means every category, the same as before.
+- `pagination.total` counts only the filtered chats. Paging (`page`, `pageSize`) works as before.
+- Example: the user's ticket history is `GET /api/chats/user/<userId>?categoryIds=1&page=1&pageSize=20`. Each row is one ticket (`chat_ticket`, `status`, `created_at`, `closed_at`, last message).

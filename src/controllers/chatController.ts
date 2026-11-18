@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { createNewChat, fetchActiveChats, fetchUserChats, getChatById, fetchChatMessages, fetchChatMessagesPage, updateChatStatus, markRead, ensureUserSalesChat } from "../services/chatService.js";
 import { getIO } from "../sockets/io.js";
+import { parseCategoryIds } from "../utils/categoryIds.js";
 
 export async function getActiveChats(req: Request, res: Response) {
   console.log("Fetching active chats");
@@ -25,7 +26,8 @@ export async function getUserChats(req: Request, res: Response) {
   try {
     // Pagination is opt-in: without page/pageSize every chat is returned.
     const { page, pageSize } = readPaging(req.query);
-    const result = await fetchUserChats(userId, page, pageSize);
+    // Optional ?categoryIds=1 (or "1,2"): only those chat categories.
+    const result = await fetchUserChats(userId, page, pageSize, parseCategoryIds(req.query.categoryIds));
     res.json({
       success: true,
       data: result.chats,
@@ -53,7 +55,8 @@ export async function getUserSalesChat(req: Request, res: Response) {
     await ensureUserSalesChat(userId, userName ?? "", userReferrerId ?? "", userReferrerName ?? "");
     // Pagination is opt-in: without page/pageSize every chat is returned.
     const { page, pageSize } = readPaging(req.body);
-    const result = await fetchUserChats(userId, page, pageSize);
+    // Optional categoryIds ("1,2" or [1, 2]): only those chat categories.
+    const result = await fetchUserChats(userId, page, pageSize, parseCategoryIds(req.body.categoryIds));
     res.json({
       success: true,
       data: result.chats,

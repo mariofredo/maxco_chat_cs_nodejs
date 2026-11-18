@@ -185,7 +185,7 @@ Render `sender_type: 'system'` as the **Automated message** bubble (`metadata.ty
 
 `chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2).
 
-The feature ships switched off (`auto_close_minutes = 0`). It is switched on after this app version is released.
+The feature ships switched on (`auto_close_minutes = 10`). Release this app version before the backend runs migration 10, or the backend sets `auto_close_minutes = 0` until then.
 
 ### 9.2 New ticket
 

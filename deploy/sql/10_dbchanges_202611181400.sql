@@ -10,7 +10,7 @@
 --   1) list_messages.sender_type also accepts 'system' (the automated message
 --      stored when an idle Customer Support chat is closed automatically),
 --   2) adds the auto-close settings to list_chat_config:
---        auto_close_minutes  - 0 = off (the shipped value); set it to 10 once
+--        auto_close_minutes  - 10 (the shipped value; 0 = off). Run this file once
 --                              the app and the CRM show automated messages
 --        auto_close_message  - message template, {name} and {minutes}
 -- ============================================================================
@@ -22,7 +22,7 @@ ALTER TABLE list_messages
 
 INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`)
 VALUES
-  ('auto_close_minutes', '0',
+  ('auto_close_minutes', '10',
    'Minutes without a user reply after an admin message before a Customer Support chat closes automatically. 0 = off'),
   ('auto_close_message',
    'Hi {name}, since we haven''t received a reply from you in the last {minutes} minutes, this chat will now be closed. Please contact us again if you have any further questions.',

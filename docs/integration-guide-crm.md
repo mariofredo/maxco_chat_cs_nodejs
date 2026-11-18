@@ -191,7 +191,7 @@ Settings live in `list_chat_config` and apply without a restart:
 
 | Key | Value |
 |---|---|
-| `auto_close_minutes` | minutes; `0` = off. Ships as `0`, set to `10` after the app and CRM releases. |
+| `auto_close_minutes` | minutes; `0` = off. Ships as `10` (on); set `0` until the app and CRM releases if they are not out yet. |
 | `auto_close_message` | text template, `{name}` = user name (or "there"), `{minutes}`. Max 255 characters. |
 
 ### 9.2 New ticket

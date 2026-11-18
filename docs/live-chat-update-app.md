@@ -169,6 +169,6 @@ Open `test.html` (repo root) against the backend. The **App** panel plays this a
 
 ## 8. Release notes
 
-- **Order:** release the app (and the CRM) before the backend turns auto-close on. The new behavior is harmless against the current backend.
-- **Auto-close is off by default** (`auto_close_minutes = 0`). The backend team switches it on after the app release; no restart is needed.
+- **Order:** release the app (and the CRM) before the backend runs migration 10, which turns auto-close on. The new behavior is harmless against the current backend.
+- **Auto-close is on by default** (`auto_close_minutes = 10`) once the backend runs migration 10. Release the app first, or ask the backend team to set it to `0` until then; no restart is needed.
 - **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.

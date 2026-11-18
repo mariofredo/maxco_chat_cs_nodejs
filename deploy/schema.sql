@@ -165,7 +165,7 @@ UNLOCK TABLES;
 LOCK TABLES `list_chat_config` WRITE;
 /*!40000 ALTER TABLE `list_chat_config` DISABLE KEYS */;
 INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('auto_close_message','Hi {name}, since we haven\'t received a reply from you in the last {minutes} minutes, this chat will now be closed. Please contact us again if you have any further questions.','Automated message when a chat closes automatically. {name} = user name, {minutes} = auto_close_minutes');
-INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('auto_close_minutes','0','Minutes without a user reply after an admin message before a Customer Support chat closes automatically. 0 = off');
+INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('auto_close_minutes','10','Minutes without a user reply after an admin message before a Customer Support chat closes automatically. 0 = off');
 INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('max_waiting_minutes','120','Waiting threshold in minutes before an active chat moves to the waiting list');
 /*!40000 ALTER TABLE `list_chat_config` ENABLE KEYS */;
 UNLOCK TABLES;

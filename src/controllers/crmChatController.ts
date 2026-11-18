@@ -157,9 +157,18 @@ export async function crmCloseChat(req: Request, res: Response) {
     const success = await closeChatById(chatId);
     if (success) {
       const data = await fetchChatById(chatId);
+      // Tell the room (the user's app included), same as the socket close_chat.
+      getIO().to(`chat_${chatId}`).emit("chat_closed", { chatId, chatData: data, reason: "agent" });
       res.json({ success: true, message: "Chat closed successfully", data: data });
     } else {
-      res.status(404).json({ success: false, message: "Chat not found or could not be closed" });
+      // Already closed (for example by the automated close): same success
+      // for the CRM, nothing changed and nothing is announced again.
+      const existing = await fetchChatById(chatId);
+      if (existing && existing.status === "closed") {
+        res.json({ success: true, message: "Chat already closed", data: existing });
+      } else {
+        res.status(404).json({ success: false, message: "Chat not found or could not be closed" });
+      }
     }
   } catch (err) {
     console.error(err);

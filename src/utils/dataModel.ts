@@ -1,11 +1,17 @@
+/** One `list_chats` row (the pool returns dates as strings: dateStrings). */
 export type ChatDataInfo = {
   id: number;
   chat_ticket: string;
+  category_id: number;
   user_id: string;
+  user_name: string | null;
+  user_referrer_id: string | null;
+  user_referrer_name: string | null;
   admin_id: string | null;
+  admin_name: string | null;
   status: string;
-  created_date: Date;
-  closed_date: Date | null;
+  created_at: string;
+  closed_at: string | null;
 };
 
 export type SendMessageInput = {

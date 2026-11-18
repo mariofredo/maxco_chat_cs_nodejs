@@ -212,7 +212,7 @@ curl -s -X POST http://127.0.0.1:3000/api/chats/crm/create_service_chat \
 # upload a file (must succeed and store the file in the chat_uploads volume)
 B64=$(printf 'hello' | base64)
 curl -s -X POST http://127.0.0.1:3000/api/chats/crm/chat/upload \
-  -H 'Content-Type: application/json' -d "{\"fileName\":\"test.txt\",\"fileDataBase64\":\"$B64\"}"
+  -H 'Content-Type: application/json' -d "{\"fileName\":\"test.png\",\"fileDataBase64\":\"$B64\"}"
 docker exec maxco_chat_cs ls -l /app/uploads/chat
 
 # Socket.IO handshake (used by realtime chat)
@@ -261,7 +261,7 @@ location / {
     proxy_set_header   Host $host;
     proxy_set_header   X-Real-IP $remote_addr;
     proxy_read_timeout 3600s;                        # long-lived websocket connections
-    client_max_body_size 50m;                        # upload/base64 payloads up to 50 MB
+    client_max_body_size 72m;                        # 50 MB files sent as base64 (about 67 MB)
 }
 ```
 
@@ -319,7 +319,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `ER_NO_DB/ER_FK_ON_CATEGORY` or `POST /api/chats/user` fails with a foreign key error on `list_chats.category_id` | category 3 seed missing → run `sql/dbchanges_202610161456.sql` |
 | A user shows two inside sales chats (category 3) | `sql/dbchanges_202610191417.sql` not run yet → run it (it removes the duplicates and adds `uq_list_chats_sales_chat`) |
 | Upload returns `{"success":false,"message":"File upload failed"}` with `EACCES` in the logs | `/app/uploads` is mounted with the wrong ownership (e.g. a host folder bind mount) → use the `chat_uploads` named volume, or `chown -R 1000:1000` the host folder |
-| Upload fails behind nginx (413) | `client_max_body_size` is too low (payloads can reach 50 MB) |
+| Upload fails behind nginx (413) | `client_max_body_size` is too low (a 50 MB file reaches about 72 MB as base64) |
 | Chat is not realtime | The reverse proxy is not forwarding the `Upgrade`/`Connection` headers, or `proxy_read_timeout` is too short |
 | Message timestamps are off | Container `TZ` differs from the MySQL timezone; align both |
 | Check the running image version | `docker inspect maxco_chat_cs --format '{{.Config.Image}}'` and the `org.opencontainers.image.version` label |

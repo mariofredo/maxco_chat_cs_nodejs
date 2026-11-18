@@ -146,13 +146,18 @@ api -X POST $BASE/api/chats/crm/open_promotion_chat -d '{"user_id":"user456","us
 api -X POST $BASE/api/chats/crm/open_inside_sales_chat -d '{"user_id":"user789","user_name":"Dewi","user_referrer_id":"sales1","user_referrer_name":"Sales Satu","admin_id":"admin1","admin_name":"CS Ani"}'
 api -X POST $BASE/api/chats/crm/chat/referred -d '{"userReferrerId":"sales1","page":1,"pageSize":20}'
 ```
-Harapan: `create_service_chat` dan panggilan pertama `open_promotion_chat` / `open_inside_sales_chat` membalas `201`. Memanggil `open_promotion_chat` atau `open_inside_sales_chat` lagi membalas `200` (`isNew: false`) dengan chat yang sama. `create_service_chat` yang dipanggil ulang untuk user yang sudah punya chat membalas `401 Chat already assigned to another admin` bila `admin_id` tidak cocok dengan admin chat itu. `chat/referred` menampilkan chat milik `sales1`.
+Harapan: `create_service_chat` dan panggilan pertama `open_promotion_chat` / `open_inside_sales_chat` membalas `201`. Memanggil `open_promotion_chat` atau `open_inside_sales_chat` lagi membalas `200` (`isNew: false`) dengan chat yang sama. `create_service_chat` yang dipanggil ulang untuk user yang sudah punya chat membalas `200` dengan chat yang sama, untuk `admin_id` mana pun (semua CS boleh membuka chat CS lain). `chat/referred` menampilkan chat milik `sales1`.
 
 **7.7 Upload file**
 ```bash
+api -X POST $BASE/api/chats/crm/chat/upload -d "{\"fileName\":\"test.png\",\"fileDataBase64\":\"$(printf hello | base64)\"}"
 api -X POST $BASE/api/chats/crm/chat/upload -d "{\"fileName\":\"test.txt\",\"fileDataBase64\":\"$(printf hello | base64)\"}"
 ```
-Hasil `data.file_url` berbentuk `uploads/chat/<angka>_test.txt`. Buka `$BASE/<file_url>` di browser atau `curl`: isinya `hello`.
+Hasil:
+- Upload pertama mengembalikan `data.file_url` berbentuk `uploads/chat/<angka>_test.png`. Buka `$BASE/<file_url>` di browser atau lewat `curl`; isinya `hello`.
+- Upload kedua ditolak dengan `400`:
+  `{ "success": false, "reason": "file_type_not_allowed", "message": "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)", "maxBytes": 52428800 }`.
+  Hanya jpg, jpeg, png, webp, mp4, mov dan pdf yang diterima, dengan ukuran maksimal 50 MB.
 
 **7.8 Menutup chat**
 ```bash

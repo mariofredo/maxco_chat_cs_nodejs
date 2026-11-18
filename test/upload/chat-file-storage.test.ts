@@ -37,6 +37,21 @@ test("exactly the limit passes, one byte more is too large", () => {
   );
 });
 
+test("line-wrapped base64 is measured on the real file", () => {
+  const wrapped = (n: number, eol: string) =>
+    (b64(n).match(/.{1,76}/g) ?? []).join(eol);
+  assert.equal(validateUpload("a.png", wrapped(9800, "\r\n"), 10000).data.length, 9800);
+  assert.equal(validateUpload("a.png", wrapped(10000, "\n"), 10000).data.length, 10000);
+  assert.equal(validateUpload("a.png", b64(10) + "\n", 10).data.length, 10);
+});
+
+test("a payload far above the limit is refused before decoding", () => {
+  assert.throws(
+    () => validateUpload("a.png", "A".repeat(10_000), 1000),
+    (e: unknown) => e instanceof FileUploadError && e.reason === "file_too_large",
+  );
+});
+
 test("error messages are the agreed text", () => {
   assert.throws(() => validateUpload("a.png", b64(11), 10), { message: "File is larger than 50 MB" });
   assert.throws(() => validateUpload("a.exe", b64(1)), {

@@ -45,9 +45,10 @@ export function safeFileName(fileName: string): string {
 }
 
 /**
- * Checks a base64 chat file: allowed extension, then size. The size is first
- * estimated from the base64 length, so an oversized upload is refused before
- * it is decoded. Throws FileUploadError.
+ * Checks a base64 chat file: allowed extension, then size. A payload far
+ * above the limit is refused from its length alone, before it is decoded;
+ * the guard has slack because line breaks in wrapped base64 are not data.
+ * The exact limit is checked on the decoded bytes. Throws FileUploadError.
  */
 export function validateUpload(
   fileName: string,
@@ -62,9 +63,10 @@ export function validateUpload(
   }
 
   const base64 = String(fileDataBase64 ?? "");
-  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
-  const estimatedBytes = Math.floor((base64.length * 3) / 4) - padding;
-  if (estimatedBytes > maxBytes) {
+  // Base64 of maxBytes is ceil(maxBytes / 3) * 4 characters; 5% + 16 covers
+  // line breaks (76-character lines with CRLF add about 2.6%).
+  const maxBase64Length = Math.ceil(maxBytes / 3) * 4 * 1.05 + 16;
+  if (base64.length > maxBase64Length) {
     throw new FileUploadError("file_too_large", maxBytes);
   }
 
@@ -75,8 +77,18 @@ export function validateUpload(
   return { safeName, data };
 }
 
+/** Validates, then stores a chat file (REST upload). */
 export async function saveChatFile(fileName: string, fileDataBase64: string) {
   const { safeName, data } = validateUpload(fileName, fileDataBase64);
+  return writeChatFile(safeName, data, fileName);
+}
+
+/**
+ * Stores a file that validateUpload already accepted, as
+ * uploads/chat/<timestamp>_<safeName>. `originalName` goes to the metadata.
+ */
+export async function writeChatFile(safeName: string, data: Buffer, originalName: string) {
+  const fileName = originalName;
   const uploadDir = "uploads/chat";
   await fs.promises.mkdir(uploadDir, { recursive: true });
   const filePath = `${uploadDir}/${Date.now()}_${safeName}`;

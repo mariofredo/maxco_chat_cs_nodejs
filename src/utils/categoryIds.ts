@@ -4,6 +4,9 @@
  * duplicates. Anything else gives [], which means "no filter" (every
  * category). Unlike normalizeCategoryIds (CRM lists), there is no default.
  */
+/** Real category ids are 1-3; the cap keeps a huge request cheap. */
+export const MAX_CATEGORY_IDS = 20;
+
 export function parseCategoryIds(input: unknown): number[] {
   let raw: unknown[];
   if (Array.isArray(input)) {
@@ -16,14 +19,15 @@ export function parseCategoryIds(input: unknown): number[] {
     return [];
   }
 
-  const ids: number[] = [];
+  const ids = new Set<number>();
   for (const value of raw) {
+    if (ids.size >= MAX_CATEGORY_IDS) break;
     const text = typeof value === "string" ? value.trim() : value;
     if (text === "" || text === null || text === undefined) continue;
     const id = Number(text);
-    if (Number.isInteger(id) && id > 0 && !ids.includes(id)) {
-      ids.push(id);
+    if (Number.isInteger(id) && id > 0) {
+      ids.add(id);
     }
   }
-  return ids;
+  return [...ids];
 }

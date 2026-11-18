@@ -2,7 +2,7 @@ import { randomInt } from "crypto";
 import { pool } from "../config/db.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { randomNumericString } from "../utils/helper.js";
-import { saveChatFile } from "../utils/chatFileStorage.js";
+import { validateUpload, writeChatFile } from "../utils/chatFileStorage.js";
 import type { SendMessageInput, ChatDataInfo } from "../utils/dataModel.js";
 import { assignWaitingChat } from "./crmChatService.js";
 import { getIO } from "../sockets/io.js";
@@ -370,6 +370,16 @@ export async function sendMessage(input: SendMessageInput) {
     throw new Error("Invalid sender_type");
   }
 
+  // A file is checked before anything else happens, so a refused file opens
+  // no ticket, assigns no PIC and sends no event.
+  let upload: ReturnType<typeof validateUpload> | null = null;
+  if (content_type === 2 && !content_url) {
+    if (!file_name || !file_data) {
+      throw new Error("Invalid file payload");
+    }
+    upload = validateUpload(file_name, file_data);
+  }
+
   let route = await routeMessage(input.chat_id, sender_id, sender_type, sender_name);
   let chat_id = route.chatId;
 
@@ -395,16 +405,14 @@ export async function sendMessage(input: SendMessageInput) {
   let metadataValue: any = null;
 
   if (content_type === 2) {
-    if (!content_url) {
-       if (!file_name || !file_data) {
-        throw new Error("Invalid file payload");
-      }
-      const fileResult = await saveChatFile(file_name, file_data);
+    if (upload) {
+      const fileResult = await writeChatFile(upload.safeName, upload.data, file_name ?? upload.safeName);
       contentUrl = fileResult.contentUrl;
       metadataValue = fileResult.metadata;
       finalMessage = null;
     } else {
-     contentUrl = content_url;
+     // Already uploaded (CRM REST upload): the URL is used as is.
+     contentUrl = content_url ?? null;
      metadataValue = input.metadata || null;
      finalMessage = null;
     }

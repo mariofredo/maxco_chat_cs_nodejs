@@ -1,0 +1,174 @@
+# Live Chat Update: Mobile App (user side)
+
+What the mobile app has to build for the new Customer Support (CS) ticket flow, the chat list, and the file upload limit.
+
+- **Audience:** the Flutter team that builds the user-facing Live Chat.
+- **Backend:** PR #2 (tickets, auto-close) and PR #3 (upload limit, category filter, all-CS access).
+- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads" and "Chat list filter". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+
+## 1. What changes for the user
+
+- **Chats with Customer Support are one continuous conversation.** On the server, each CS chat is a ticket with a number (`chat_ticket`), and a ticket can be closed. The user never sees a list of tickets. The user sees one conversation, with "Ticket #… is closed" and "New ticket #… opened" lines inside it.
+- **Auto-close.** When CS has replied and the user stays silent for a set time (10 minutes in the design), the server closes the ticket and sends an **Automated message**. This is switched off until the release (see section 9).
+- **The user can always write.** After a ticket is closed the input stays enabled. The next message opens a new ticket automatically; the app does not call anything extra.
+- **Files** are limited to 50 MB and to images, videos and PDF. The app checks this before sending and shows a clear message.
+
+```
+┌ Live Chat ───────────────────────────────┐
+│ Maxco Customer Support        ● Online   │
+├──────────────────────────────────────────┤
+│        ── New ticket #1234-… opened ──     │
+│ CS:   Could you send us the receipt?     │
+│ ⏱ AUTOMATED MESSAGE                      │
+│   Hi Priya, since we haven't received…   │
+│        ── 🔒 Ticket #1234-… is closed ──   │
+│     Send a message to open a new ticket. │
+│        ── New ticket #5678-… opened ──     │
+│ You:  My deposit has arrived, now…       │
+│ CS:   Good morning, I'd be glad to help  │
+├──────────────────────────────────────────┤
+│ [+] Write a message…               [ ↑ ] │
+└──────────────────────────────────────────┘
+```
+
+## 2. Chat list screen
+
+Load the user's chats:
+
+```
+GET /api/chats/user/:userId?page=1&pageSize=50[&categoryIds=1|2|3]
+Header: X-API-Key
+→ { success, data: [ chat rows ], pagination: { total, page, pageSize, hasMore } }
+```
+
+| `category_id` | Name | Show as |
+|---|---|---|
+| 1 | Customer Support | **One row** for all CS tickets. Status and last message come from the newest ticket. Opening it shows the continuous conversation (section 3). |
+| 2 | Promotion | One row per chat, as today. |
+| 3 | Inside Sales | One row per chat, as today. |
+
+- `categoryIds` is optional. With no value you get every category. `categoryIds=1` returns only the CS tickets, and `pagination.total` counts only those.
+- Each row has `id`, `chat_ticket`, `category_id`, `status` (`pending` / `active` / `closed`), `created_at`, `closed_at`, `last_message`, `last_message_time`, `last_message_content_type`, `last_message_sender_id`.
+- Unread badge: `GET /api/client/chat/unread/:userId` returns `{ total, chats: [{ chatId, unread }] }`. For the single CS row, add up the unread counts of all CS tickets. Automated messages count as unread.
+
+## 3. The Customer Support conversation
+
+### 3.1 Loading it
+
+```
+GET /api/client/chat/support-thread/:userId?page=1&pageSize=50
+→ { success,
+    data: { messages: [...], tickets: [...], current: {...} | null },
+    pagination: { total, page, pageSize, hasMore } }
+```
+
+- **`messages`** come from every CS ticket of the user. Page 1 holds the newest messages, and each page is ordered oldest first. Load the next page when the user scrolls up and `hasMore` is true.
+- **`tickets`** has `{ chat_id, chat_ticket, status, created_at, closed_at }` for every ticket that has messages on this page.
+- **`current`** is `{ chat_id, chat_ticket, status }` of the newest CS ticket, or `null` if the user never chatted with CS. In that case create the chat with `POST /api/chats` (as today).
+
+### 3.2 Drawing it
+
+Merge the markers and the messages into one list and sort it by these keys, in this order:
+
+1. time (`created_at` of a message; for markers, the ticket's `created_at` or `closed_at`);
+2. the older ticket first (smaller `chat_id`);
+3. inside one ticket: the "opened" marker, then the messages, then the "closed" marker;
+4. messages of the same ticket and time: by message `id`. Dart's `List.sort` is not stable, so this key must be explicit.
+
+| Item | Draw as |
+|---|---|
+| "opened" marker (ticket `created_at`) | `New ticket #<chat_ticket> opened` |
+| "closed" marker (ticket `closed_at`, when not null) | `🔒 Ticket #<chat_ticket> is closed` |
+| `sender_type: "user"` | the user's bubble |
+| `sender_type: "admin"` | the CS bubble (`sender_name`) |
+| `sender_type: "system"` (`metadata.type = "auto_close"`) | **Automated message** bubble. Never treat it as the user's message. |
+| `content_type: 2` | file bubble. URL: `<server>/<content_url>`; name in `metadata.fileName` |
+
+Under the last item, show `Send a message to open a new ticket.` only when `current.status === "closed"`.
+
+### 3.3 Sending and rooms
+
+- Join `chat_<current.chat_id>` (`join_chat`) and `user_<userId>` (`join_user`) when the conversation opens.
+- **Always send to `current.chat_id`**, even when that ticket is closed:
+
+  ```
+  emit send_message { chat_id, sender_id, sender_type: "user", sender_name, content_type: 1, message }
+  ```
+
+- Keep the input enabled when the ticket is closed.
+
+### 3.4 Live events
+
+| Event | What it means | What the app does |
+|---|---|---|
+| `new_message` with `previous_chat_id: null` | normal message | add the bubble |
+| `new_message` with `previous_chat_id` set and `chat_data.category_id === 1` | the message was addressed to a closed ticket and stored in the user's open ticket | make `chat_id` the current ticket. If `is_new_ticket` is true, draw `New ticket #<chat_data.chat_ticket> opened` first. Then add the bubble. |
+| `chat_closed { chatId, chatData, reason }` | a ticket was closed. `reason` is `"auto_no_reply"` (automated) or `"agent"` (closed by CS) | if `chatId` is the current ticket, draw the closed marker and the "Send a message…" line. **Ignore it for any other chat.** |
+| `new_user_chatroom { chatData }` | a new room for this user, for example the new ticket opened from another device | `join_chat` that room |
+| `send_message_error { chat_id, reason, message, maxBytes }` | the server refused the message (section 4) | show `message` and do not add the bubble |
+
+- Do not switch tickets just because `chat_id` differs from the current one. The socket also receives messages of the Promotion and Sales chats, and a normal message echoes `chat_id` exactly as you sent it (string or number).
+- Two quick messages to a closed ticket open only one ticket.
+
+### 3.5 Read state
+
+`PUT /api/chats/:chatId/read { userId }` marks one chat (ticket) as read. When the user opens the conversation, mark every CS ticket that has unread messages (see the unread endpoint), not only `current`. Otherwise an automated message on an older ticket keeps the badge on.
+
+## 4. File uploads
+
+Send a file with `send_message`:
+
+```
+{ content_type: 2, file_name, file_data: <base64, no "data:" prefix> }
+```
+
+- **Limit:** 50 MB (`52 428 800` bytes) of the real file.
+- **Allowed types:** `jpg`, `jpeg`, `png`, `webp`, `mp4`, `mov`, `pdf`. The server checks the extension in any letter case.
+- **Check both on the device, before base64-encoding.** Above about 72 MB of payload, Socket.IO drops the connection without any error event. That used to appear as "something went wrong".
+- **iPhone photos are HEIC/HEIF by default, and GIF and 3GP are refused.** Convert to jpg/mp4 before sending, or ask the backend team to add the type.
+- A refused file is not stored and opens no ticket. The sender gets `send_message_error`:
+
+  | `reason` | `message` (show as is) |
+  |---|---|
+  | `file_too_large` | `File is larger than 50 MB` |
+  | `file_type_not_allowed` | `File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)` |
+
+## 5. Push notifications
+
+- CS replies and the automated close message arrive as FCM push with `data: { type: "chat", chat_id }`.
+- For a CS ticket, open the CS conversation (section 3), not the single ticket.
+
+## 6. Reference
+
+| Direction | Name | Payload |
+|---|---|---|
+| REST | `GET /api/chats/user/:userId` | `?page&pageSize&categoryIds` → chat rows + `pagination` |
+| REST | `GET /api/client/chat/support-thread/:userId` | `?page&pageSize` → `{ messages, tickets, current }` + `pagination` |
+| REST | `GET /api/client/chat/unread/:userId` | `{ total, chats: [{ chatId, unread }] }` |
+| REST | `PUT /api/chats/:chatId/read` | `{ userId }` |
+| REST | `POST /api/chats` | `{ userId, userName }` → new or open CS chat |
+| to server | `send_message` | `{ chat_id, sender_id, sender_type: "user", sender_name, content_type, message \| file_name + file_data }` |
+| to server | `join_chat` / `join_user` | `{ chatId, userId }` / `{ userId }` |
+| from server | `new_message` | message fields + `chat_data`, `previous_chat_id`, `is_new_ticket` |
+| from server | `chat_closed` | `{ chatId, chatData, reason }` |
+| from server | `new_user_chatroom` | `{ chatData }` |
+| from server | `send_message_error` | `{ chat_id, reason, message?, maxBytes? }` |
+
+All REST calls send the `X-API-Key` header, and the socket connects with `auth: { api_key }`.
+
+## 7. Try it with test.html
+
+Open `test.html` (repo root) against the backend. The **App** panel plays this app and the **CRM** panel plays CS.
+
+1. Click **Connect keduanya** and **Buat chat**, then join the room on both sides.
+2. CRM sends a message, then clicks **Tutup chat (REST)**. On the App side you see "🔒 Ticket #… is closed (ditutup CS)" and the "Send a message…" line.
+3. App sends a message. You see "New ticket #… opened", and the Chat ID moves to the new ticket.
+4. App **Thread tiket**, or the "Customer Support" row in the list: the continuous conversation.
+5. App list category picker: CS shows as one row, Promotion and Inside Sales as one row each.
+6. **Kirim file** with a `.exe` or a file over 50 MB: refused before sending. Tick **Lewati cek file** under "Lanjutan" to see the server's `send_message_error` instead.
+
+## 8. Release notes
+
+- **Order:** release the app (and the CRM) before the backend turns auto-close on. The new behavior is harmless against the current backend.
+- **Auto-close is off by default** (`auto_close_minutes = 0`). The backend team switches it on after the app release; no restart is needed.
+- **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.

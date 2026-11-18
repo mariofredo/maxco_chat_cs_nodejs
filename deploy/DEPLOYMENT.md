@@ -20,8 +20,8 @@ deploy/
 ├── sql/
 │   ├── 01_schema.sql             # base schema (required, run first)
 │   └── 02_migrations.sql         # subsequent schema changes (run second)
-└── maxco-chat-cs_1.0.0_linux-amd64.tar (+ .sha256)   # for Intel/AMD 64-bit servers
-    maxco-chat-cs_1.0.0_linux-arm64.tar (+ .sha256)   # for ARM64 servers (e.g. Graviton)
+└── maxco-chat-cs_1.1.0_linux-amd64.tar (+ .sha256)   # for Intel/AMD 64-bit servers
+    maxco-chat-cs_1.1.0_linux-arm64.tar (+ .sha256)   # for ARM64 servers (e.g. Graviton)
 ```
 
 If the client has their own registry, the image can be pushed and pulled instead — see §9.
@@ -45,13 +45,13 @@ If the client has their own registry, the image can be pushed and pulled instead
 
 ```bash
 # 1. In this folder:
-sha256sum -c maxco-chat-cs_1.0.0_linux-amd64.tar.sha256   # (macOS: shasum -a 256 -c ...)
+sha256sum -c maxco-chat-cs_1.1.0_linux-amd64.tar.sha256   # (macOS: shasum -a 256 -c ...)
 
 # 2. If the client already has MySQL, fill in .env first
 cp .env.example .env && nano .env
 
 # 3. Install (automatically docker load + compose up + health wait)
-IMAGE_TAR=maxco-chat-cs_1.0.0_linux-amd64.tar ./install.sh
+IMAGE_TAR=maxco-chat-cs_1.1.0_linux-amd64.tar ./install.sh
 
 # If the client has no MySQL yet, one command for app + database:
 cp .env.example .env && nano .env
@@ -73,7 +73,7 @@ was loaded earlier. On ARM64 servers use the `linux-arm64` file name.
 
 > [!IMPORTANT]
 > When you run it with `sudo`, write `IMAGE_TAR=...` **after** `sudo`:
-> `sudo IMAGE_TAR=maxco-chat-cs_1.0.0_linux-arm64.tar ./install.sh`.
+> `sudo IMAGE_TAR=maxco-chat-cs_1.1.0_linux-arm64.tar ./install.sh`.
 > A variable written before `sudo` (`IMAGE_TAR=... sudo ./install.sh`) is dropped by `sudo`;
 > `install.sh` then prints `IMAGE_TAR not set` and chooses by CPU as above.
 
@@ -83,8 +83,8 @@ was loaded earlier. On ARM64 servers use the `linux-arm64` file name.
 
 ```bash
 # a. Load the image
-docker load -i maxco-chat-cs_1.0.0_linux-amd64.tar
-docker image inspect maxco-chat-cs:1.0.0 --format 'arch={{.Architecture}} version={{index .Config.Labels "org.opencontainers.image.version"}}'
+docker load -i maxco-chat-cs_1.1.0_linux-amd64.tar
+docker image inspect maxco-chat-cs:1.1.0 --format 'arch={{.Architecture}} version={{index .Config.Labels "org.opencontainers.image.version"}}'
 
 # b. Configuration
 cp .env.example .env && nano .env
@@ -174,7 +174,7 @@ Important notes:
 | `MYSQLDATABASE` | yes | `maxco_chat_im` | Must match the database name in `01_schema.sql` |
 | `PORT` | no | `3000` | Port inside the container |
 | `APP_PORT` | no | `3000` | Port exposed on the server (used by the CRM) |
-| `APP_IMAGE` | no | `maxco-chat-cs:1.0.0` | Image tag used by compose |
+| `APP_IMAGE` | no | `maxco-chat-cs:1.1.0` | Image tag used by compose |
 | `CHAT_API_KEY` | recommended | `openssl rand -hex 32` | Protects REST + Socket.IO with a static API key (§6 note below). Empty = open mode (development) |
 | `TZ` | no | `Asia/Jakarta` | Container timezone |
 | `PRESENCE_GRACE_SECONDS` | no | `10` | Seconds before a disconnected CRM/app socket is shown offline (online status of CS and users). `0` = no waiting |
@@ -302,18 +302,18 @@ If the client needs domain restrictions, contact us for a custom build.
 
 ```bash
 # vendor (needs docker login access to the client's registry)
-docker push <client-registry>/maxco-chat-cs:1.0.0
+docker push <client-registry>/maxco-chat-cs:1.1.0
 
 # client
-docker pull <client-registry>/maxco-chat-cs:1.0.0
-# then set APP_IMAGE=<client-registry>/maxco-chat-cs:1.0.0 in .env
+docker pull <client-registry>/maxco-chat-cs:1.1.0
+# then set APP_IMAGE=<client-registry>/maxco-chat-cs:1.1.0 in .env
 ```
 
 If a single multi-arch tag is preferred (the registry picks the right one for the server CPU):
 
 ```bash
 docker buildx build --platform linux/amd64,linux/arm64 \
-  -t <client-registry>/maxco-chat-cs:1.0.0 --push .
+  -t <client-registry>/maxco-chat-cs:1.1.0 --push .
 ```
 
 ---
@@ -327,7 +327,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
     tar czf /backup/uploads-$(date +%F).tar.gz -C /data .
   ```
 - **Database** is backed up separately by the client (e.g. `mysqldump maxco_chat_im`); the application stores nothing else.
-- **Upgrade**: `docker load -i maxco-chat-cs_1.0.1_linux-amd64.tar`, update `APP_IMAGE` in `.env`,
+- **Upgrade**: `docker load -i maxco-chat-cs_1.1.1_linux-amd64.tar`, update `APP_IMAGE` in `.env`,
   then `docker compose up -d`. A few seconds of downtime; `restart: unless-stopped` brings the container back up.
 - **Rollback**: set `APP_IMAGE` back to the previous tag (the old image stays on the server) then `docker compose up -d`.
 - **Logs**: stdout only (json-file driver, rotation 10 MB × 3 files). `docker compose logs -f app`.
@@ -339,7 +339,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | Symptom | Cause & action |
 |---|---|
 | `exec format error` during `docker compose up` | Image architecture does not match the server → use the matching amd64/arm64 tar |
-| `The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8)` (or the reverse) | The other CPU's image was loaded, e.g. by an older `install.sh` run as `IMAGE_TAR=... sudo ./install.sh` (sudo drops the variable). Current `install.sh` replaces it by itself: `sudo ./install.sh`. With an older `install.sh`: `sudo docker compose down`, `sudo docker rmi maxco-chat-cs:1.0.0`, then `sudo IMAGE_TAR=maxco-chat-cs_1.0.0_linux-arm64.tar ./install.sh` |
+| `The requested image's platform (linux/amd64) does not match the detected host platform (linux/arm64/v8)` (or the reverse) | The other CPU's image was loaded, e.g. by an older `install.sh` run as `IMAGE_TAR=... sudo ./install.sh` (sudo drops the variable). Current `install.sh` replaces it by itself: `sudo ./install.sh`. With an older `install.sh`: `sudo docker compose down`, `sudo docker rmi maxco-chat-cs:1.1.0`, then `sudo IMAGE_TAR=maxco-chat-cs_1.1.0_linux-arm64.tar ./install.sh` |
 | Container restarts repeatedly, MySQL `ECONNREFUSED` / `ETIMEDOUT` in logs | Wrong `MYSQLHOST` (from inside a container, `localhost` means the container itself) or MySQL refuses connections from the container IP → use `host.docker.internal` with `extra_hosts: host-gateway` |
 | `ER_NO_SUCH_TABLE list_chats` | `01_schema.sql` was not run, or `MYSQLDATABASE` differs from the database name used by the schema |
 | `ER_BAD_FIELD_ERROR sender_name/user_name/admin_name` | `02_migrations.sql` was not run |
@@ -360,7 +360,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 
 | Item | Value |
 |---|---|
-| Image | `maxco-chat-cs:1.0.0` (+ amd64/arm64 tar files with their `.sha256`) |
+| Image | `maxco-chat-cs:1.1.0` (+ amd64/arm64 tar files with their `.sha256`) |
 | Port | 3000 (changeable via `PORT`/`APP_PORT`) |
 | Volume | `chat_uploads` → `/app/uploads` |
 | Health check | `GET /healthz` (already enabled in the image and compose file) |

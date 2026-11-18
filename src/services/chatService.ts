@@ -95,7 +95,42 @@ export async function fetchUserChats(
   };
 }
 
-export async function createNewChat(userId: string, userName: string, userReferrer: string = "") {
+// Calls of createNewChat per user, chained. Two requests for the same user at
+// once (a double send to a closed ticket, or POST /api/chats racing it) would
+// both pass the "no open chat" check and create two tickets; chained, the
+// second one runs after the first and finds the first one's chat.
+const supportChatQueues = new Map<string, Promise<unknown>>();
+
+type NewChatResult = { chat: RowDataPacket | undefined; isNew: boolean };
+
+/**
+ * The user's open Customer Support chat (pending / active), or a new one with
+ * a new ticket number when there is none. Serialized per user.
+ */
+export async function createNewChat(
+  userId: string,
+  userName: string,
+  userReferrer: string = "",
+): Promise<NewChatResult> {
+  const previous = supportChatQueues.get(userId) ?? Promise.resolve();
+  const current = previous
+    .catch(() => undefined)
+    .then(() => createNewChatUnlocked(userId, userName, userReferrer));
+  supportChatQueues.set(userId, current);
+  try {
+    return await current;
+  } finally {
+    if (supportChatQueues.get(userId) === current) {
+      supportChatQueues.delete(userId);
+    }
+  }
+}
+
+async function createNewChatUnlocked(
+  userId: string,
+  userName: string,
+  userReferrer: string,
+): Promise<NewChatResult> {
   // Check if user already has an active/waiting chat
   const [existingChats] = await pool.query<RowDataPacket[]>(
     "SELECT * FROM list_chats WHERE user_id = ? AND status IN ('active', 'pending') AND category_id = 1 ORDER BY created_at DESC LIMIT 1",
@@ -211,9 +246,22 @@ export async function fetchChatMessages(
   return messages;
 }
 
+/** An admin message was sent to a Customer Support ticket that is closed. */
+export class ChatClosedError extends Error {
+  readonly chatId: number | string;
+
+  constructor(chatId: number | string) {
+    super(`Chat ${chatId} is closed`);
+    this.name = "ChatClosedError";
+    this.chatId = chatId;
+  }
+}
+
+/** Customer Support (list_chat_category 1): the only category with tickets. */
+const SUPPORT_CATEGORY_ID = 1;
+
 export async function sendMessage(input: SendMessageInput) {
   const {
-    chat_id,
     sender_id,
     sender_type,
     sender_name,
@@ -224,6 +272,40 @@ export async function sendMessage(input: SendMessageInput) {
     content_url,
     metadata
   } = input;
+
+  // 'system' messages are written by the server only (auto-close).
+  if (sender_type !== "user" && sender_type !== "admin") {
+    throw new Error("Invalid sender_type");
+  }
+
+  // A closed Customer Support ticket takes no more messages: a user message
+  // opens (or reuses) the user's open ticket and is stored there; an admin
+  // message is rejected.
+  let chat_id: number | string = input.chat_id;
+  let previousChatId: number | null = null;
+  let isNewTicket = false;
+  const addressedChat = await getChatById(String(chat_id));
+  if (
+    addressedChat &&
+    Number(addressedChat.category_id) === SUPPORT_CATEGORY_ID &&
+    addressedChat.status === "closed"
+  ) {
+    if (sender_type === "admin") {
+      throw new ChatClosedError(chat_id);
+    }
+    const { chat: openChat, isNew } = await createNewChat(
+      String(addressedChat.user_id),
+      addressedChat.user_name || sender_name || "",
+      addressedChat.user_referrer_id ?? "",
+    );
+    if (!openChat) {
+      throw new Error(`Could not open a new ticket for chat ${chat_id}`);
+    }
+    previousChatId = Number(addressedChat.id);
+    chat_id = Number(openChat.id);
+    isNewTicket = isNew;
+  }
+
   // An admin reply to a waiting chat assigns it to that admin. Checked on the
   // chat itself, before the message is stored (a stored admin message ends
   // the waiting state).
@@ -297,7 +379,11 @@ export async function sendMessage(input: SendMessageInput) {
     metadata: metadataValue,
     created_at: new Date(),
     is_just_assigned: justAssigned,
-    chat_data: chatData
+    chat_data: chatData,
+    // Set when the message was addressed to a closed ticket and stored in the
+    // user's open ticket instead (chat_id / chat_data are that open ticket).
+    previous_chat_id: previousChatId,
+    is_new_ticket: isNewTicket
   };
 }
 

@@ -93,7 +93,7 @@
   .divider.hint::before, .divider.hint::after { border-top: none; }
   select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
   .ticketlist { max-height: 200px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); margin-top: 6px; }
-  .ticketlist:empty::before { content: 'Belum dimuat. Klik "Chat saya" atau pilih kategori.'; display: block; color: var(--muted); font-size: 12px; padding: 10px; text-align: center; }
+  .ticketlist:empty::before { content: 'Belum dimuat. Klik tombolnya atau pilih kategori.'; display: block; color: var(--muted); font-size: 12px; padding: 10px; text-align: center; }
   .ticket-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--text);
     background: transparent; border: none; border-bottom: 1px solid var(--line); padding: 6px 10px; cursor: pointer; }
   .ticket-row:hover { background: var(--soft); }
@@ -210,12 +210,12 @@
         <button class="btn" data-act="unread">Belum dibaca</button>
         <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
       </div>
-      <div class="sub">Daftar chat / tiket per kategori</div>
+      <div class="sub">Daftar chat (seperti di app: tiket CS digabung jadi satu percakapan)</div>
       <div class="row">
         <label>Kategori
           <select id="categoryFilter" title="GET /api/chats/user/:userId?categoryIds=…">
             <option value="">Semua kategori</option>
-            <option value="1">Customer Support (tiket)</option>
+            <option value="1">Customer Support</option>
             <option value="2">Promotion</option>
             <option value="3">Inside Sales</option>
           </select>
@@ -283,6 +283,22 @@
         <button class="btn" data-act="crmChatInfo" data-needs="chat">Info chat</button>
         <button class="btn" data-act="crmConfig">Config</button>
       </div>
+      <div class="sub">Riwayat tiket user (per tiket, user di panel App)</div>
+      <div class="row">
+        <label>Kategori
+          <select id="crmCategoryFilter" title="GET /api/chats/user/:userId?categoryIds=…">
+            <option value="">Semua kategori</option>
+            <option value="1">Customer Support (per tiket)</option>
+            <option value="2">Promotion</option>
+            <option value="3">Inside Sales</option>
+          </select>
+        </label>
+      </div>
+      <div class="btns">
+        <button class="btn" data-act="crmTicketHistory" title="GET /api/chats/user/:userId?categoryIds=…">Muat riwayat tiket</button>
+      </div>
+      <div class="ticketlist" id="crmTicketList" aria-live="polite"></div>
+      <div class="sub" id="crmTicketListInfo"></div>
     </div>
 
     <div class="group">
@@ -348,7 +364,7 @@
   const base = () => val('serverUrl').replace(/\/+$/, '');
 
   // ---- remembered fields ----
-  const SAVED = ['serverUrl', 'apiKey', 'appUserId', 'appUserName', 'crmAdminId', 'crmAdminName', 'referrerId', 'referrerName', 'pageNum', 'pageSizeNum', 'categoryFilter'];
+  const SAVED = ['serverUrl', 'apiKey', 'appUserId', 'appUserName', 'crmAdminId', 'crmAdminName', 'referrerId', 'referrerName', 'pageNum', 'pageSizeNum', 'categoryFilter', 'crmCategoryFilter'];
   const store = {
     get(k) { try { return localStorage.getItem('mcc.' + k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem('mcc.' + k, v); } catch (e) { /* storage blocked */ } }
@@ -759,51 +775,97 @@
 
   const CATEGORY_NAME = { 1: 'Customer Support', 2: 'Promotion', 3: 'Inside Sales' };
 
-  // Chats of the user (one row per ticket for Customer Support), optionally
-  // filtered by category. Clicking a row opens it: Chat ID + history.
-  async function myChats() {
-    const cats = val('categoryFilter');
+  async function loadUserChats(source, cats, pageQuery) {
     const filter = cats ? `&categoryIds=${encodeURIComponent(cats)}` : '';
-    const r = await api('app', 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${paging()}${filter}`);
-    const list = $('ticketList');
-    if (!r.ok || !r.json || !Array.isArray(r.json.data)) {
-      list.replaceChildren();
-      $('ticketListInfo').textContent = 'Gagal memuat daftar; lihat log.';
-      return;
-    }
-    const rows = r.json.data;
-    list.replaceChildren(...rows.map(ticketRow));
-    const pg = r.json.pagination || {};
-    $('ticketListInfo').textContent = `${CATEGORY_NAME[cats] || (cats ? `Kategori ${cats}` : 'Semua kategori')}: ` +
-      `${pg.total ?? rows.length} chat · halaman ${pg.page ?? 1}${pg.hasMore ? ' (ada halaman berikutnya)' : ''}` +
-      (rows.length ? ' · klik baris untuk membuka' : ' · tidak ada chat');
+    const r = await api(source, 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${pageQuery}${filter}`);
+    return r.ok && r.json && Array.isArray(r.json.data) ? { rows: r.json.data, pg: r.json.pagination || {} } : null;
   }
 
-  function ticketRow(c) {
+  const lastAt = (c) => String(c.last_message_time || c.created_at || '');
+  const lastText = (c) => Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
+
+  // One list row: title, category, status badge, "time · last message".
+  function listRow({ key, title, category, status, last, current, onClick }) {
     const row = document.createElement('button');
     row.type = 'button';
-    row.className = 'ticket-row' + (String(c.id) === chatId() ? ' current' : '');
-    row.dataset.chatId = String(c.id);
-    const tno = document.createElement('span'); tno.className = 'tno'; tno.textContent = `#${c.id} · ${c.chat_ticket || '-'}`;
-    const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`;
-    const st = document.createElement('span'); st.className = `st ${c.status}`; st.textContent = c.status;
-    const last = document.createElement('span'); last.className = 'last';
-    const when = c.last_message_time ? String(c.last_message_time).slice(0, 16) : String(c.created_at || '').slice(0, 16);
-    const text = Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
-    last.textContent = `${when} · ${text}`;
-    row.append(tno, cat, st, last);
-    row.title = `Buka chat ${c.id}`;
-    row.addEventListener('click', () => openChatFromList(c));
+    row.className = 'ticket-row' + (current ? ' current' : '');
+    row.dataset.key = key;
+    const tno = document.createElement('span'); tno.className = 'tno'; tno.textContent = title;
+    const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = category;
+    const st = document.createElement('span'); st.className = `st ${status}`; st.textContent = status;
+    const lt = document.createElement('span'); lt.className = 'last'; lt.textContent = last;
+    row.append(tno, cat, st, lt);
+    row.addEventListener('click', onClick);
     return row;
   }
 
-  function openChatFromList(c) {
+  const markCurrent = (listId, key) =>
+    $(listId).querySelectorAll('.ticket-row').forEach((r) => r.classList.toggle('current', r.dataset.key === key));
+
+  // ---- App: the user's chat list as the app shows it. All Customer Support
+  // tickets are ONE conversation (opens the continuous support thread);
+  // Promotion and Inside Sales are one chat each.
+  async function myChats() {
+    const cats = val('categoryFilter');
+    const res = await loadUserChats('app', cats, 'page=1&pageSize=100');
+    if (!res) { $('ticketList').replaceChildren(); $('ticketListInfo').textContent = 'Gagal memuat daftar; lihat log.'; return; }
+    const tickets = res.rows.filter((c) => Number(c.category_id) === 1);
+    const others = res.rows.filter((c) => Number(c.category_id) !== 1);
+    const rows = [];
+    if (tickets.length) {
+      const latest = tickets.reduce((a, b) => (Number(b.id) > Number(a.id) ? b : a));
+      const lastMsg = tickets.reduce((a, b) => (lastAt(b) > lastAt(a) ? b : a));
+      rows.push(listRow({
+        key: 'cs', title: 'Customer Support', category: `${tickets.length} tiket · aktif #${latest.id}`,
+        status: latest.status, last: `${lastAt(lastMsg).slice(0, 16)} · ${lastText(lastMsg)}`,
+        current: tickets.some((c) => String(c.id) === chatId()),
+        onClick: () => { markCurrent('ticketList', 'cs'); openSupportConversation(); },
+      }));
+    }
+    for (const c of others) {
+      rows.push(listRow({
+        key: String(c.id), title: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`, category: `#${c.id}`,
+        status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}`, current: String(c.id) === chatId(),
+        onClick: () => { markCurrent('ticketList', String(c.id)); openChat('app', c); },
+      }));
+    }
+    $('ticketList').replaceChildren(...rows);
+    $('ticketListInfo').textContent = `${CATEGORY_NAME[cats] || 'Semua kategori'}: ${rows.length} percakapan` +
+      (tickets.length ? ` (Customer Support = ${tickets.length} tiket digabung)` : '') +
+      (rows.length ? ' · klik untuk membuka' : ' · tidak ada chat');
+  }
+
+  // The continuous Customer Support conversation: every ticket in one thread,
+  // sending goes to the current ticket (a closed one opens a new ticket).
+  async function openSupportConversation() {
+    await supportThread();
+    if (connected('app') && chatId()) joinRoom('app');
+  }
+
+  // ---- CRM: the same user's chats, one row per ticket (how CS works).
+  async function crmTicketHistory() {
+    const cats = val('crmCategoryFilter');
+    const res = await loadUserChats('crm', cats, paging());
+    if (!res) { $('crmTicketList').replaceChildren(); $('crmTicketListInfo').textContent = 'Gagal memuat daftar; lihat log.'; return; }
+    $('crmTicketList').replaceChildren(...res.rows.map((c) => listRow({
+      key: String(c.id), title: `#${c.id} · ${c.chat_ticket || '-'}`, category: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`,
+      status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}${c.admin_name ? ` · PIC ${c.admin_name}` : ''}`,
+      current: String(c.id) === chatId(),
+      onClick: () => { markCurrent('crmTicketList', String(c.id)); openChat('crm', c); },
+    })));
+    const pg = res.pg;
+    $('crmTicketListInfo').textContent = `${CATEGORY_NAME[cats] || 'Semua kategori'} untuk user ${identity('app').id}: ` +
+      `${pg.total ?? res.rows.length} tiket/chat · halaman ${pg.page ?? 1}${pg.hasMore ? ' (ada halaman berikutnya)' : ''}` +
+      (res.rows.length ? ' · klik untuk membuka' : '');
+  }
+
+  // Opens one chat on a side: Chat ID, its history, its room.
+  function openChat(side, c) {
     $('chatId').value = String(c.id);
-    log('app', 'system', `Chat ${c.id} (${CATEGORY_NAME[c.category_id] || c.category_id}, ${c.status}) dipilih dari daftar.`);
-    $('ticketList').querySelectorAll('.ticket-row').forEach((r) => r.classList.toggle('current', r.dataset.chatId === String(c.id)));
+    log(side, 'system', `Chat ${c.id} (${CATEGORY_NAME[c.category_id] || c.category_id}, ${c.status}) dibuka dari daftar.`);
     updateUI();
-    loadMessages('app');
-    if (connected('app')) joinRoom('app');
+    loadMessages(side);
+    if (connected(side)) joinRoom(side);
   }
 
   async function crmActive() {
@@ -861,6 +923,7 @@
     userPresence,
     crmPending: () => api('crm', 'GET', `/api/chats/crm/chat/pending?${paging()}`),
     crmActive,
+    crmTicketHistory,
     crmClosed: () => api('crm', 'GET', `/api/chats/crm/closed?${paging()}`),
     crmReferred: () => api('crm', 'POST', '/api/chats/crm/chat/referred', { userReferrerId: val('referrerId'), ...pageBody() }),
     crmChatInfo: () => api('crm', 'GET', `/api/chats/crm/chat/room/${encodeURIComponent(chatId())}`),
@@ -906,6 +969,7 @@
   $('appUserId').addEventListener('input', renderUserBadge);
   $('appUserName').addEventListener('input', renderUserBadge);
   $('categoryFilter').addEventListener('change', myChats);   // reload the list for the chosen category
+  $('crmCategoryFilter').addEventListener('change', crmTicketHistory);
   for (const id of SAVED) $(id).addEventListener('change', () => store.set(id, $(id).value));
 
   // ---- UI state: enable/disable, status text, next-step hint ----

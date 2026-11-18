@@ -227,9 +227,17 @@ Promotion and Sales chats keep today's behavior.
   - "New ticket #`chat_ticket` opened" at `created_at`,
   - "Ticket #`chat_ticket` is closed" at `closed_at` (when not null).
 
-  Times have one-second precision, so break ties this way: the "opened" marker goes **before** messages with the same time, the "closed" marker goes **after** them. The automated message is stored with exactly the ticket's `closed_at`, so it always shows just above "Ticket … is closed".
+  Times have one-second precision, and a user can write again in the same second as the automated close. Sort every marker and message by these keys, in order:
+  1. time;
+  2. the older ticket first (smaller `chat_id`);
+  3. inside one ticket: "opened" marker, then messages, then "closed" marker;
+  4. messages of the same ticket and the same time: by message `id`, which is the order the server returns them in.
 
-  Older data can hold messages written to a ticket after it was closed. They show after its closed marker.
+  Dart's `List.sort` is not stable, so include key 4 explicitly.
+
+  The automated message is stored with exactly the ticket's `closed_at`. With this order it shows just above "Ticket … is closed", and the next ticket's "opened" marker comes after that line.
+
+  Older data can hold messages written to a ticket after it was closed. They show after its closed marker when they were written in a later second. In the same second, key 3 puts them above the marker.
 - **`current`** is the user's latest Customer Support chat.
   - Show "Send a message to open a new ticket." only when `current.status === "closed"`.
   - Send with `send_message` to `current.chat_id`, even when it is closed (section 9.2).

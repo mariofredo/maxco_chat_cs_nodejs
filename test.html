@@ -82,6 +82,29 @@
   .bubble .name { font-size: 11px; color: var(--muted); display: block; }
   .bubble a { color: var(--primary); }
   .bubble.system { align-self: center; background: transparent; color: var(--muted); font-size: 12px; font-style: italic; }
+  .bubble.error { align-self: center; background: var(--err-bg); color: var(--err); font-size: 12px; }
+  .bubble.automated { background: var(--soft); border: 1px dashed var(--line); }
+  .bubble.automated .name { text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  .divider { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); align-self: stretch; text-align: center; }
+  .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+  .divider.open { color: var(--ok); font-weight: 600; }
+  .divider.closed { font-weight: 600; }
+  .divider.hint { font-style: italic; }
+  .divider.hint::before, .divider.hint::after { border-top: none; }
+  select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; min-height: 32px; }
+  .ticketlist { max-height: 200px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); margin-top: 6px; }
+  .ticketlist:empty::before { content: 'Belum dimuat. Klik tombolnya atau pilih kategori.'; display: block; color: var(--muted); font-size: 12px; padding: 10px; text-align: center; }
+  .ticket-row { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--text);
+    background: transparent; border: none; border-bottom: 1px solid var(--line); padding: 6px 10px; cursor: pointer; }
+  .ticket-row:hover { background: var(--soft); }
+  .ticket-row.current { background: var(--soft); box-shadow: inset 3px 0 0 var(--primary); }
+  .ticket-row .tno { font-weight: 700; }
+  .ticket-row .cat { color: var(--muted); }
+  .ticket-row .last { grid-column: 1 / -1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st { padding: 0 8px; border-radius: 999px; font-weight: 600; font-size: 11px; background: var(--theirs); color: var(--muted); }
+  .st.active { background: var(--ok-bg); color: var(--ok); }
+  .st.pending { background: var(--warn-bg); color: var(--text); }
+  .st.closed { background: var(--err-bg); color: var(--err); }
   .chathead { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-bottom: none; border-radius: 8px 8px 0 0; background: var(--card); }
   .chathead + .chatbox { border-radius: 0 0 8px 8px; }
   .avatar { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); color: var(--primary); display: inline-flex; align-items: center; justify-content: center; font-weight: 700; flex: none; }
@@ -147,6 +170,7 @@
       <label>Nama referrer <input id="referrerName" class="short" value="Sales Satu" autocomplete="off"></label>
       <label>Halaman <input id="pageNum" class="short" value="1" autocomplete="off"></label>
       <label>Jumlah per halaman <input id="pageSizeNum" class="short" value="20" autocomplete="off"></label>
+      <label class="switch"><input type="checkbox" id="skipFileCheck"> Lewati cek file di browser <small>(uji validasi server)</small></label>
     </div>
   </details>
 </header>
@@ -181,10 +205,24 @@
       </div>
       <div class="sub">Lainnya</div>
       <div class="btns">
-        <button class="btn" data-act="myChats">Chat saya</button>
+        <button class="btn" data-act="supportThread" title="GET /api/client/chat/support-thread/:userId — semua tiket CS sebagai satu thread">Thread tiket</button>
+        <button class="btn" data-act="myChats" title="GET /api/chats/user/:userId?categoryIds=…">Chat saya</button>
         <button class="btn" data-act="unread">Belum dibaca</button>
         <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
       </div>
+      <div class="sub">Daftar chat (seperti di app: tiket CS digabung jadi satu percakapan)</div>
+      <div class="row">
+        <label>Kategori
+          <select id="categoryFilter" title="GET /api/chats/user/:userId?categoryIds=…">
+            <option value="">Semua kategori</option>
+            <option value="1">Customer Support</option>
+            <option value="2">Promotion</option>
+            <option value="3">Inside Sales</option>
+          </select>
+        </label>
+      </div>
+      <div class="ticketlist" id="ticketList" aria-live="polite"></div>
+      <div class="sub" id="ticketListInfo"></div>
     </div>
 
     <div class="group">
@@ -245,6 +283,22 @@
         <button class="btn" data-act="crmChatInfo" data-needs="chat">Info chat</button>
         <button class="btn" data-act="crmConfig">Config</button>
       </div>
+      <div class="sub">Riwayat tiket user (per tiket, user di panel App)</div>
+      <div class="row">
+        <label>Kategori
+          <select id="crmCategoryFilter" title="GET /api/chats/user/:userId?categoryIds=…">
+            <option value="">Semua kategori</option>
+            <option value="1">Customer Support (per tiket)</option>
+            <option value="2">Promotion</option>
+            <option value="3">Inside Sales</option>
+          </select>
+        </label>
+      </div>
+      <div class="btns">
+        <button class="btn" data-act="crmTicketHistory" title="GET /api/chats/user/:userId?categoryIds=…">Muat riwayat tiket</button>
+      </div>
+      <div class="ticketlist" id="crmTicketList" aria-live="polite"></div>
+      <div class="sub" id="crmTicketListInfo"></div>
     </div>
 
     <div class="group">
@@ -265,7 +319,8 @@
       <div class="sub">Aksi pada chat</div>
       <div class="btns">
         <button class="btn" data-act="assign" data-needs="conn chat" title="assigned_admin_chat">Tugaskan saya</button>
-        <button class="btn" data-act="closeChat" data-needs="conn chat" title="close_chat">Tutup chat</button>
+        <button class="btn" data-act="closeChat" data-needs="conn chat" title="socket close_chat">Tutup chat (socket)</button>
+        <button class="btn" data-act="closeChatRest" data-needs="chat" title="POST /api/chats/crm/chat/close">Tutup chat (REST)</button>
         <button class="btn" data-act="openPromotion" title="Atas nama user di panel App">Buka promotion</button>
         <button class="btn" data-act="openInsideSales" title="Atas nama user di panel App">Buka inside sales</button>
       </div>
@@ -309,7 +364,7 @@
   const base = () => val('serverUrl').replace(/\/+$/, '');
 
   // ---- remembered fields ----
-  const SAVED = ['serverUrl', 'apiKey', 'appUserId', 'appUserName', 'crmAdminId', 'crmAdminName', 'referrerId', 'referrerName', 'pageNum', 'pageSizeNum'];
+  const SAVED = ['serverUrl', 'apiKey', 'appUserId', 'appUserName', 'crmAdminId', 'crmAdminName', 'referrerId', 'referrerName', 'pageNum', 'pageSizeNum', 'categoryFilter', 'crmCategoryFilter'];
   const store = {
     get(k) { try { return localStorage.getItem('mcc.' + k); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem('mcc.' + k, v); } catch (e) { /* storage blocked */ } }
@@ -336,6 +391,7 @@
   const full = (v) => JSON.stringify(v, null, 2).slice(0, 6000);
   const KIND = {
     new_message: 'chat', assigned_admin_chat: 'chat', chat_closed: 'chat', chat_room_created: 'chat', new_user_chatroom: 'chat',
+    send_message_error: 'error',
     presence_changed: 'presence', presence_user_changed: 'presence', typing: 'typing'
   };
 
@@ -364,8 +420,10 @@
   function addBubble(side, opts) {
     const box = $('chatbox-' + side);
     const b = document.createElement('div');
-    b.className = 'bubble' + (opts.system ? ' system' : opts.mine ? ' mine' : '');
-    if (opts.who && !opts.mine && !opts.system) {
+    b.className = 'bubble' + (opts.error ? ' error' : opts.system ? ' system' : opts.automated ? ' automated' : opts.mine ? ' mine' : '');
+    if (opts.automated) {
+      const n = document.createElement('span'); n.className = 'name'; n.textContent = '⏱ Automated message'; b.append(n);
+    } else if (opts.who && !opts.mine && !opts.system && !opts.error) {
       const n = document.createElement('span'); n.className = 'name'; n.textContent = opts.who; b.append(n);
     }
     if (opts.href) {
@@ -378,7 +436,23 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  // Ticket marker line: kind 'open' (new ticket), 'closed' (ticket closed) or 'hint'.
+  function addDivider(side, text, kind) {
+    const box = $('chatbox-' + side);
+    const d = document.createElement('div');
+    d.className = `divider ${kind}`;
+    d.textContent = text;
+    const typingBubble = box.querySelector('.typing-bubble');
+    if (typingBubble) box.insertBefore(d, typingBubble); else box.append(d);
+    box.scrollTop = box.scrollHeight;
+  }
+
   function bubbleFromMessage(side, m) {
+    // Automated message of the server (auto-close): never "mine", never the user or CS.
+    if (m.sender_type === 'system') {
+      addBubble(side, { automated: true, text: m.message || '' });
+      return false;
+    }
     const me = identity(side);
     const mine = m.sender_type === sides[side].role && String(m.sender_id) === me.id;
     let meta = m.metadata;
@@ -393,8 +467,44 @@
   }
 
   function onMessage(side, m) {
+    // A message addressed to a closed CS ticket was stored in the user's open
+    // ticket: that ticket becomes the current chat (the server already moved
+    // this socket into its room). A normal message has previous_chat_id null.
+    const chat = m.chat_data;
+    if (m.previous_chat_id != null && chat && Number(chat.category_id) === 1) {
+      if (m.is_new_ticket) addDivider(side, `New ticket #${chat.chat_ticket} opened`, 'open');
+      $('chatId').value = String(m.chat_id);
+      sides[side].joinedChat = String(m.chat_id);
+      log(side, 'system', `Pesan dipindah dari tiket ${m.previous_chat_id} ke chat ${m.chat_id} (tiket ${chat.chat_ticket}${m.is_new_ticket ? ', baru' : ''}). Chat ID diganti.`);
+      updateUI();
+    }
     if (bubbleFromMessage(side, m)) { clearTimeout(sides[side].awaiting); sides[side].awaiting = null; }
     else clearTyping(side);   // the other party sent a message: they are no longer typing
+  }
+
+  const CLOSE_REASON = { auto_no_reply: 'otomatis, user tidak membalas', agent: 'ditutup CS' };
+
+  function onChatClosed(side, d) {
+    if (String(d.chatId) !== chatId()) {
+      log(side, 'system', `chat_closed untuk chat ${d.chatId}, bukan tiket aktif (${chatId() || 'kosong'}): diabaikan.`);
+      return;
+    }
+    const reason = CLOSE_REASON[d.reason] || d.reason || 'tanpa alasan';
+    // Only Customer Support chats are tickets: a message to a closed CS ticket
+    // opens a new one. A closed Promotion / Sales chat keeps its messages.
+    if (!d.chatData || Number(d.chatData.category_id) !== 1) {
+      addDivider(side, `🔒 Chat ditutup (${reason})`, 'closed');
+      return;
+    }
+    addDivider(side, `🔒 Ticket #${d.chatData.chat_ticket} is closed (${reason})`, 'closed');
+    if (side === 'app') addDivider(side, 'Send a message to open a new ticket.', 'hint');
+  }
+
+  function onSendError(side, d) {
+    clearTimeout(sides[side].awaiting);
+    sides[side].awaiting = null;
+    const text = d.reason === 'chat_closed' ? 'Tiket sudah ditutup; balasan tidak terkirim.' : (d.message || d.reason);
+    addBubble(side, { error: true, text: `Ditolak: ${text}` });
   }
 
   function clearTyping(side) {
@@ -497,7 +607,8 @@
     socket.onAny((ev, payload) => log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`));
     socket.on('new_message', (m) => onMessage(side, m));
     socket.on('assigned_admin_chat', (d) => addBubble(side, { system: true, text: `Admin ditugaskan: ${d.adminName || d.adminId}` }));
-    socket.on('chat_closed', () => addBubble(side, { system: true, text: 'Chat ditutup' }));
+    socket.on('chat_closed', (d) => onChatClosed(side, d));
+    socket.on('send_message_error', (d) => onSendError(side, d));
     socket.on('typing', (d) => showTyping(side, d));
     socket.on('presence_changed', (d) => setTeam(d.team, d.online));
     socket.on('presence_user_changed', (d) => { userOnline[d.userId] = d.online; renderUserBadge(); });
@@ -545,9 +656,28 @@
     }
   }
 
+  // Same limits and texts as the server (src/utils/chatFileStorage.ts).
+  const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+  const ALLOWED_UPLOAD_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'pdf'];
+  function checkFile(file) {
+    const dot = file.name.lastIndexOf('.');
+    const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';
+    if (!ALLOWED_UPLOAD_EXTENSIONS.includes(ext)) return `File type not allowed (allowed: ${ALLOWED_UPLOAD_EXTENSIONS.join(', ')})`;
+    if (file.size > MAX_UPLOAD_BYTES) return 'File is larger than 50 MB';
+    return null;
+  }
+
   function sendFile(side) {
     const file = $(side + 'File').files[0];
     if (!file) { log(side, 'error', 'Pilih berkas dulu.'); return; }
+    // Like the real app: check before encoding (a payload far above the limit
+    // makes Socket.IO drop the connection). "Lewati cek" tests the server check.
+    const problem = $('skipFileCheck').checked ? null : checkFile(file);
+    if (problem) {
+      log(side, 'error', `File tidak dikirim (cek browser): ${problem}`);
+      addBubble(side, { error: true, text: `Tidak dikirim: ${problem}` });
+      return;
+    }
     const me = identity(side);
     const reader = new FileReader();
     reader.onload = () => {
@@ -617,6 +747,135 @@
     }
   }
 
+  // All Customer Support tickets of the user as one thread. Order: time, then
+  // the older ticket first, then opened marker -> messages -> closed marker.
+  async function supportThread() {
+    const id = identity('app').id;
+    const p = pageBody();
+    const r = await api('app', 'GET', `/api/client/chat/support-thread/${encodeURIComponent(id)}?page=${p.page}&pageSize=${Math.max(p.pageSize, 50)}`);
+    if (!r.ok || !r.json || !r.json.data) return;
+    const { messages, tickets, current } = r.json.data;
+    const items = [];
+    for (const t of tickets) {
+      items.push({ at: t.created_at, chat: t.chat_id, order: 0, draw: () => addDivider('app', `New ticket #${t.chat_ticket} opened`, 'open') });
+      if (t.closed_at) items.push({ at: t.closed_at, chat: t.chat_id, order: 2, draw: () => addDivider('app', `🔒 Ticket #${t.chat_ticket} is closed`, 'closed') });
+    }
+    for (const m of messages) items.push({ at: m.created_at, chat: Number(m.chat_id), order: 1, draw: () => bubbleFromMessage('app', m) });
+    items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.chat - b.chat || a.order - b.order));
+    $('chatbox-app').replaceChildren();
+    items.forEach((it) => it.draw());
+    if (!current) { addDivider('app', 'Belum pernah chat dengan CS. "Buat chat" untuk memulai.', 'hint'); return; }
+    if (current.status === 'closed') addDivider('app', 'Send a message to open a new ticket.', 'hint');
+    if (chatId() !== String(current.chat_id)) {
+      $('chatId').value = String(current.chat_id);
+      log('app', 'system', `Chat ID diisi tiket aktif: ${current.chat_id} (${current.chat_ticket}, ${current.status}). Masuk room untuk menerima pesan baru.`);
+      updateUI();
+    }
+  }
+
+  const CATEGORY_NAME = { 1: 'Customer Support', 2: 'Promotion', 3: 'Inside Sales' };
+
+  async function loadUserChats(source, cats, pageQuery) {
+    const filter = cats ? `&categoryIds=${encodeURIComponent(cats)}` : '';
+    const r = await api(source, 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${pageQuery}${filter}`);
+    return r.ok && r.json && Array.isArray(r.json.data) ? { rows: r.json.data, pg: r.json.pagination || {} } : null;
+  }
+
+  const lastAt = (c) => String(c.last_message_time || c.created_at || '');
+  const lastText = (c) => Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
+
+  // One list row: title, category, status badge, "time · last message".
+  function listRow({ key, title, category, status, last, current, onClick }) {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'ticket-row' + (current ? ' current' : '');
+    row.dataset.key = key;
+    const tno = document.createElement('span'); tno.className = 'tno'; tno.textContent = title;
+    const cat = document.createElement('span'); cat.className = 'cat'; cat.textContent = category;
+    const st = document.createElement('span'); st.className = `st ${status}`; st.textContent = status;
+    const lt = document.createElement('span'); lt.className = 'last'; lt.textContent = last;
+    row.append(tno, cat, st, lt);
+    row.addEventListener('click', onClick);
+    return row;
+  }
+
+  const markCurrent = (listId, key) =>
+    $(listId).querySelectorAll('.ticket-row').forEach((r) => r.classList.toggle('current', r.dataset.key === key));
+
+  // ---- App: the user's chat list as the app shows it. All Customer Support
+  // tickets are ONE conversation (opens the continuous support thread);
+  // Promotion and Inside Sales are one chat each.
+  async function myChats() {
+    const cats = val('categoryFilter');
+    const res = await loadUserChats('app', cats, 'page=1&pageSize=100');
+    if (!res) { $('ticketList').replaceChildren(); $('ticketListInfo').textContent = 'Gagal memuat daftar; lihat log.'; return; }
+    const tickets = res.rows.filter((c) => Number(c.category_id) === 1);
+    const others = res.rows.filter((c) => Number(c.category_id) !== 1);
+    const rows = [];
+    if (tickets.length) {
+      const latest = tickets.reduce((a, b) => (Number(b.id) > Number(a.id) ? b : a));
+      const lastMsg = tickets.reduce((a, b) => (lastAt(b) > lastAt(a) ? b : a));
+      rows.push(listRow({
+        key: 'cs', title: 'Customer Support', category: `${tickets.length} tiket · aktif #${latest.id}`,
+        status: latest.status, last: `${lastAt(lastMsg).slice(0, 16)} · ${lastText(lastMsg)}`,
+        current: tickets.some((c) => String(c.id) === chatId()),
+        onClick: () => { markCurrent('ticketList', 'cs'); openSupportConversation(); },
+      }));
+    }
+    for (const c of others) {
+      rows.push(listRow({
+        key: String(c.id), title: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`, category: `#${c.id}`,
+        status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}`, current: String(c.id) === chatId(),
+        onClick: () => { markCurrent('ticketList', String(c.id)); openChat('app', c); },
+      }));
+    }
+    $('ticketList').replaceChildren(...rows);
+    $('ticketListInfo').textContent = `${CATEGORY_NAME[cats] || 'Semua kategori'}: ${rows.length} percakapan` +
+      (tickets.length ? ` (Customer Support = ${tickets.length} tiket digabung)` : '') +
+      (rows.length ? ' · klik untuk membuka' : ' · tidak ada chat');
+  }
+
+  // The continuous Customer Support conversation: every ticket in one thread,
+  // sending goes to the current ticket (a closed one opens a new ticket).
+  async function openSupportConversation() {
+    await supportThread();
+    if (connected('app') && chatId()) joinRoom('app');
+  }
+
+  // ---- CRM: the same user's chats, one row per ticket (how CS works).
+  async function crmTicketHistory() {
+    const cats = val('crmCategoryFilter');
+    const res = await loadUserChats('crm', cats, paging());
+    if (!res) { $('crmTicketList').replaceChildren(); $('crmTicketListInfo').textContent = 'Gagal memuat daftar; lihat log.'; return; }
+    $('crmTicketList').replaceChildren(...res.rows.map((c) => listRow({
+      key: String(c.id), title: `#${c.id} · ${c.chat_ticket || '-'}`, category: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`,
+      status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}${c.admin_name ? ` · PIC ${c.admin_name}` : ''}`,
+      current: String(c.id) === chatId(),
+      onClick: () => { markCurrent('crmTicketList', String(c.id)); openChat('crm', c); },
+    })));
+    const pg = res.pg;
+    $('crmTicketListInfo').textContent = `${CATEGORY_NAME[cats] || 'Semua kategori'} untuk user ${identity('app').id}: ` +
+      `${pg.total ?? res.rows.length} tiket/chat · halaman ${pg.page ?? 1}${pg.hasMore ? ' (ada halaman berikutnya)' : ''}` +
+      (res.rows.length ? ' · klik untuk membuka' : '');
+  }
+
+  // Opens one chat on a side: Chat ID, its history, its room.
+  function openChat(side, c) {
+    $('chatId').value = String(c.id);
+    log(side, 'system', `Chat ${c.id} (${CATEGORY_NAME[c.category_id] || c.category_id}, ${c.status}) dibuka dari daftar.`);
+    updateUI();
+    loadMessages(side);
+    if (connected(side)) joinRoom(side);
+  }
+
+  async function crmActive() {
+    const r = await api('crm', 'POST', '/api/chats/crm/chat/active', { adminId: identity('crm').id, ...pageBody() });
+    if (r.ok && r.json && Array.isArray(r.json.data)) {
+      const rows = r.json.data.map((c) => `#${c.id} ${c.chat_ticket} PIC ${c.admin_name || c.admin_id || '-'}`);
+      log('crm', 'rest', `Active (semua CS): ${rows.length} chat — ${rows.join(', ') || '-'}`);
+    }
+  }
+
   async function teamPresence() {
     const r = await api('app', 'GET', '/api/client/presence');
     if (r.ok && r.json && r.json.data) { setTeam('customer_support', r.json.data.customer_support); setTeam('sales', r.json.data.sales); }
@@ -654,7 +913,8 @@
     createChat,
     loadMessages: (s) => loadMessages(s),
     markRead: (s) => api(s, 'PUT', `/api/chats/${encodeURIComponent(chatId())}/read`, { userId: identity(s).id }),
-    myChats: () => api('app', 'GET', `/api/chats/user/${encodeURIComponent(identity('app').id)}?${paging()}`),
+    myChats,
+    supportThread,
     unread: () => api('app', 'GET', `/api/client/chat/unread/${encodeURIComponent(identity('app').id)}`),
     ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), ...pageBody() }),
     send: (s) => sendMessage(s),
@@ -662,13 +922,15 @@
     teamPresence,
     userPresence,
     crmPending: () => api('crm', 'GET', `/api/chats/crm/chat/pending?${paging()}`),
-    crmActive: () => api('crm', 'POST', '/api/chats/crm/chat/active', { adminId: identity('crm').id, ...pageBody() }),
+    crmActive,
+    crmTicketHistory,
     crmClosed: () => api('crm', 'GET', `/api/chats/crm/closed?${paging()}`),
     crmReferred: () => api('crm', 'POST', '/api/chats/crm/chat/referred', { userReferrerId: val('referrerId'), ...pageBody() }),
     crmChatInfo: () => api('crm', 'GET', `/api/chats/crm/chat/room/${encodeURIComponent(chatId())}`),
     crmConfig: () => api('crm', 'GET', '/api/chats/crm/config'),
     assign: () => emit('crm', 'assigned_admin_chat', { chatId: chatId(), adminId: identity('crm').id, adminName: identity('crm').name }),
     closeChat: () => emit('crm', 'close_chat', { chatId: chatId() }),
+    closeChatRest: () => api('crm', 'POST', '/api/chats/crm/chat/close', { chatId: chatId() }),
     openPromotion: () => api('crm', 'POST', '/api/chats/crm/open_promotion_chat', { user_id: identity('app').id, user_name: identity('app').name }),
     openInsideSales: () => api('crm', 'POST', '/api/chats/crm/open_inside_sales_chat', {
       user_id: identity('app').id, user_name: identity('app').name,
@@ -706,6 +968,8 @@
   $('chatId').addEventListener('input', updateUI);
   $('appUserId').addEventListener('input', renderUserBadge);
   $('appUserName').addEventListener('input', renderUserBadge);
+  $('categoryFilter').addEventListener('change', myChats);   // reload the list for the chosen category
+  $('crmCategoryFilter').addEventListener('change', crmTicketHistory);
   for (const id of SAVED) $(id).addEventListener('change', () => store.set(id, $(id).value));
 
   // ---- UI state: enable/disable, status text, next-step hint ----

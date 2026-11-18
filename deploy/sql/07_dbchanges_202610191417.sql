@@ -61,7 +61,7 @@ DROP TEMPORARY TABLE tmp_sales_chat_keep;
 --     CASCADE. category_id is the base column below, so its foreign key is
 --     re-created with RESTRICT first (the app never changes category ids).
 --     Databases where this file already stopped here: run
---     10_dbchanges_202611161515.sql (safe to run more than once).
+--     11_dbchanges_202611161515.sql (safe to run more than once).
 ALTER TABLE list_chats DROP FOREIGN KEY FK_list_chats_list_chat_category;
 ALTER TABLE list_chats
   ADD CONSTRAINT FK_list_chats_list_chat_category FOREIGN KEY (category_id)

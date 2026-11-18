@@ -6,7 +6,7 @@
 --   ERROR 1215 (HY000): Cannot add foreign key constraint            (MySQL 8)
 --   ERROR 1901 (HY000): Function or expression 'category_id' cannot be used ...
 -- Database baru cukup menjalankan deploy/sql/01_schema.sql s.d.
--- deploy/sql/10_dbchanges_202611161515.sql (file ini lalu tidak mengubah apa pun).
+-- deploy/sql/11_dbchanges_202611161515.sql (file ini lalu tidak mengubah apa pun).
 -- Idempotent: aman dijalankan lebih dari sekali. Backup dulu (mysqldump):
 -- langkah 1 menghapus chat inside sales duplikat setelah pesannya dipindahkan.
 --

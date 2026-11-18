@@ -25,30 +25,16 @@ npm install
 
 ## 2. Siapkan database (DB kosong)
 
-Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan file SQL urut nama. Di **MySQL 8.0**, file `07_dbchanges_202610191417.sql` gagal dengan `ERROR 1215 Cannot add foreign key constraint` (kolom generated `sales_chat_key` bentrok dengan foreign key `ON UPDATE CASCADE` di `category_id`; MariaDB tidak punya aturan itu). Jadi `07` diganti blok SQL di bawah. Di DB kosong, bagian hapus-duplikat milik `07` tidak berefek.
+Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan semua file SQL sesuai urutan nama, dari `01` sampai `11`. Semua file bisa langsung dijalankan di MySQL 8.0 maupun MariaDB. `11_dbchanges_202611161515.sql` adalah file perbaikan yang aman dijalankan berulang kali; di DB kosong file ini tidak mengubah apa pun.
 
 ```bash
 MYSQL="/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe"
 export MYSQL_PWD='<password root MySQL>'
 
-# 01 sampai 06
-cat deploy/sql/0[1-6]_*.sql | "$MYSQL" -u root
-
-# pengganti 07 (MySQL 8.0)
-"$MYSQL" -u root maxco_chat_im <<'SQL'
-ALTER TABLE list_chats DROP FOREIGN KEY FK_list_chats_list_chat_category;
-ALTER TABLE list_chats
-  ADD COLUMN sales_chat_key VARCHAR(100)
-  GENERATED ALWAYS AS (CASE WHEN category_id = 3 THEN user_id ELSE NULL END) STORED;
-ALTER TABLE list_chats ADD UNIQUE KEY uq_list_chats_sales_chat (sales_chat_key);
-ALTER TABLE list_chats
-  ADD CONSTRAINT FK_list_chats_list_chat_category
-  FOREIGN KEY (category_id) REFERENCES list_chat_category (category_id) ON DELETE RESTRICT;
-SQL
-
-# 08, 09 dan 10
-cat deploy/sql/08_*.sql deploy/sql/09_*.sql deploy/sql/10_*.sql | "$MYSQL" -u root
+for f in deploy/sql/*.sql; do echo "== $f"; "$MYSQL" -u root < "$f" || break; done
 ```
+
+Baris terakhir yang dicetak `11_*.sql` harus `1  1  RESTRICT  0`.
 
 Cek hasilnya:
 ```bash

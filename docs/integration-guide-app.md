@@ -251,6 +251,7 @@ Files are sent as base64, through `send_message` (`content_type: 2`, `file_name`
 
 - **Maximum 50 MB** (`52 428 800` bytes), measured on the real file, not on the base64 text.
 - **Allowed types**: `jpg`, `jpeg`, `png`, `webp`, `mp4`, `mov`, `pdf`. The server checks the file name's extension, in any letter case.
+- **iPhone photos (HEIC/HEIF) must be converted to JPG** before sending. HEIC/HEIF, GIF and 3GP are refused on purpose, because many CS devices cannot display HEIC. On iOS, `image_picker` with `imageQuality` or `maxWidth` returns a JPG.
 - **Check size and type on the device, before encoding.** The server accepts up to about 72 MB of payload so that a 50 MB file fits as base64. Socket.IO drops the connection, with no error event, for anything bigger, and that is what used to show as "something went wrong".
 - The server keeps only the name without its path, limited to letters, digits, `.`, `_` and `-`. The original name stays in `metadata.fileName`.
 

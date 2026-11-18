@@ -3,13 +3,13 @@
 What the mobile app has to build for the new Customer Support (CS) ticket flow, the chat list, and the file upload limit.
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
-- **Backend:** PR #2 (tickets, auto-close) and PR #3 (upload limit, category filter, all-CS access).
+- **Backend:** image `maxco-chat-cs:1.1.0` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access).
 - **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads" and "Chat list filter". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
 
 ## 1. What changes for the user
 
 - **Chats with Customer Support are one continuous conversation.** On the server, each CS chat is a ticket with a number (`chat_ticket`), and a ticket can be closed. The user never sees a list of tickets. The user sees one conversation, with "Ticket #… is closed" and "New ticket #… opened" lines inside it.
-- **Auto-close.** When CS has replied and the user stays silent for a set time (10 minutes in the design), the server closes the ticket and sends an **Automated message**. This is switched off until the release (see section 9).
+- **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and sends an **Automated message**. It is on by default once the backend runs migration 10 (see section 8).
 - **The user can always write.** After a ticket is closed the input stays enabled. The next message opens a new ticket automatically; the app does not call anything extra.
 - **Files** are limited to 50 MB and to images, videos and PDF. The app checks this before sending and shows a clear message.
 
@@ -125,7 +125,7 @@ Send a file with `send_message`:
 - **Limit:** 50 MB (`52 428 800` bytes) of the real file.
 - **Allowed types:** `jpg`, `jpeg`, `png`, `webp`, `mp4`, `mov`, `pdf`. The server checks the extension in any letter case.
 - **Check both on the device, before base64-encoding.** Above about 72 MB of payload, Socket.IO drops the connection without any error event. That used to appear as "something went wrong".
-- **iPhone photos are HEIC/HEIF by default, and GIF and 3GP are refused.** Convert to jpg/mp4 before sending, or ask the backend team to add the type.
+- **Convert iPhone photos (HEIC/HEIF) to JPG before sending.** HEIC/HEIF, GIF and 3GP are refused and will not be added: many CS devices (browsers, Windows, older Android) cannot display HEIC. On iOS, `image_picker` with `imageQuality` or `maxWidth` already returns a JPG.
 - A refused file is not stored and opens no ticket. The sender gets `send_message_error`:
 
   | `reason` | `message` (show as is) |

@@ -11,6 +11,10 @@ const clientRoutes = Router();
 // Ringkasan pesan belum dibaca (badge sidebar)
 clientRoutes.get("/chat/unread/:userId", ClientChat.getUnread);
 
+// Semua tiket Customer Support milik user sebagai satu thread (tiket baru
+// setelah tiket lama closed tetap tampil menyambung di bawahnya)
+clientRoutes.get("/chat/support-thread/:userId", ClientChat.getSupportThread);
+
 // Online status of the Customer Support and Sales teams
 clientRoutes.get("/presence", ClientChat.getClientPresence);
 

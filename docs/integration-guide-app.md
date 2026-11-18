@@ -204,3 +204,32 @@ The server opens the new ticket. The app does not call anything extra:
 Two quick messages to a closed ticket open one ticket, not two. For `new_message` of a normal message, `previous_chat_id` is `null` and `is_new_ticket` is `false`.
 
 Promotion and Sales chats keep today's behavior.
+
+### 9.3 Support thread
+
+`GET /api/client/chat/support-thread/:userId?page=1&pageSize=50` (header `X-API-Key`) returns every Customer Support ticket of the user as one thread:
+
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17 09:24:00", "...": "list_messages columns" } ],
+    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17 09:21:00", "closed_at": "2026-11-17 09:35:00" } ],
+    "current":  { "chat_id": 11, "chat_ticket": "2345-6789-0123", "status": "pending" }
+  },
+  "pagination": { "total": 120, "page": 1, "pageSize": 50, "hasMore": true }
+}
+```
+
+- **Paging** works like `GET /api/chats/:chatId/messages`: page 1 is the newest messages, the next pages go back in time, and each page is ordered oldest-first. Load the next page when the user scrolls up while `hasMore` is `true`.
+- **`tickets`** lists the tickets whose messages are on this page. Place the markers by time, not by first or last message:
+  - "New ticket #`chat_ticket` opened" at `created_at`,
+  - "Ticket #`chat_ticket` is closed" at `closed_at` (when not null).
+
+  Older data can hold messages written to a ticket after it was closed. They show after its closed marker.
+- **`current`** is the user's latest Customer Support chat.
+  - Show "Send a message to open a new ticket." only when `current.status === "closed"`.
+  - Send with `send_message` to `current.chat_id`, even when it is closed (section 9.2).
+  - When `current` is `null`, the user has never chatted with CS: create the chat with `POST /api/chats` as today.
+- **Rooms:** join `chat_<current.chat_id>` (`join_chat`) and `user_<userId>` (`join_user`).
+- **Unread:** `GET /api/client/chat/unread/:userId` now also counts automated (`system`) messages.

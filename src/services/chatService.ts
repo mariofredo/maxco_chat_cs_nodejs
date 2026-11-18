@@ -2,7 +2,7 @@ import { randomInt } from "crypto";
 import { pool } from "../config/db.js";
 import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { randomNumericString } from "../utils/helper.js";
-import { saveChatFile } from "../utils/chatFileStorage.js";
+import { validateUpload, writeChatFile } from "../utils/chatFileStorage.js";
 import type { SendMessageInput, ChatDataInfo } from "../utils/dataModel.js";
 import { assignWaitingChat } from "./crmChatService.js";
 import { getIO } from "../sockets/io.js";
@@ -38,15 +38,21 @@ export async function fetchUserChats(
   userId: string,
   page?: number,
   pageSize?: number,
+  categoryIds: number[] = [],
 ): Promise<UserChatsPage> {
   const paginated = page !== undefined || pageSize !== undefined;
   const limit = Math.max(1, Number(pageSize) || 20);
   const currentPage = Math.max(1, Number(page) || 1);
   const offset = (currentPage - 1) * limit;
+  // Optional category filter ([] = every category), on the list and the count.
+  const categorySql =
+    categoryIds.length > 0
+      ? ` AND category_id IN (${categoryIds.map(() => "?").join(", ")})`
+      : "";
 
   const [countRows] = await pool.query<RowDataPacket[]>(
-    "SELECT COUNT(*) AS total FROM list_chats WHERE user_id = ?",
-    [userId]
+    `SELECT COUNT(*) AS total FROM list_chats WHERE user_id = ?${categorySql}`,
+    [userId, ...categoryIds]
   );
   const total = Number(countRows[0]?.total ?? 0);
 
@@ -61,7 +67,7 @@ export async function fetchUserChats(
             metadata,
             ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at DESC) AS rn
         FROM list_messages
-        WHERE chat_id IN (SELECT id FROM list_chats WHERE user_id = ?)
+        WHERE chat_id IN (SELECT id FROM list_chats WHERE user_id = ?${categorySql})
     )
     SELECT
         lc.*,
@@ -73,7 +79,7 @@ export async function fetchUserChats(
     FROM list_chats lc
     LEFT JOIN last_msg lm 
         ON lc.id = lm.chat_id AND lm.rn = 1
-    WHERE lc.user_id = ?
+    WHERE lc.user_id = ?${categorySql.replace("category_id", "lc.category_id")}
     ORDER BY
         lc.category_id DESC,
         (lm.created_at IS NULL) ASC,
@@ -82,8 +88,8 @@ export async function fetchUserChats(
         lc.id DESC
     ${paginated ? "LIMIT ? OFFSET ?" : ""};`,
     paginated
-      ? [userId, userId, limit, offset]
-      : [userId, userId]
+      ? [userId, ...categoryIds, userId, ...categoryIds, limit, offset]
+      : [userId, ...categoryIds, userId, ...categoryIds]
   );
 
   return {
@@ -364,6 +370,16 @@ export async function sendMessage(input: SendMessageInput) {
     throw new Error("Invalid sender_type");
   }
 
+  // A file is checked before anything else happens, so a refused file opens
+  // no ticket, assigns no PIC and sends no event.
+  let upload: ReturnType<typeof validateUpload> | null = null;
+  if (content_type === 2 && !content_url) {
+    if (!file_name || !file_data) {
+      throw new Error("Invalid file payload");
+    }
+    upload = validateUpload(file_name, file_data);
+  }
+
   let route = await routeMessage(input.chat_id, sender_id, sender_type, sender_name);
   let chat_id = route.chatId;
 
@@ -389,16 +405,14 @@ export async function sendMessage(input: SendMessageInput) {
   let metadataValue: any = null;
 
   if (content_type === 2) {
-    if (!content_url) {
-       if (!file_name || !file_data) {
-        throw new Error("Invalid file payload");
-      }
-      const fileResult = await saveChatFile(file_name, file_data);
+    if (upload) {
+      const fileResult = await writeChatFile(upload.safeName, upload.data, file_name ?? upload.safeName);
       contentUrl = fileResult.contentUrl;
       metadataValue = fileResult.metadata;
       finalMessage = null;
     } else {
-     contentUrl = content_url;
+     // Already uploaded (CRM REST upload): the URL is used as is.
+     contentUrl = content_url ?? null;
      metadataValue = input.metadata || null;
      finalMessage = null;
     }

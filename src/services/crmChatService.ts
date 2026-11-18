@@ -70,8 +70,13 @@ export async function getMaxWaitingMinutes(): Promise<number> {
   }
 }
 
+/**
+ * Assigned list: chats with a CS reply (from any CS) inside the waiting
+ * threshold. Every CS sees every handled chat; the PIC is in admin_id /
+ * admin_name. `_adminId` is still accepted from the CRM but no longer filters.
+ */
 export async function fetchActiveChats(
-  admin_id: string,
+  _adminId: string,
   page: number = 1,
   pageSize: number = 20,
   categoryIds?: number | string | Array<number | string> | null,
@@ -93,7 +98,7 @@ export async function fetchActiveChats(
             metadata,
             ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at DESC) AS rn
         FROM list_messages
-        WHERE sender_type = 'admin' AND sender_id = ?
+        WHERE sender_type = 'admin'
     ),
     last_msg_chat AS (
         SELECT
@@ -135,7 +140,6 @@ export async function fetchActiveChats(
         lma.created_at DESC
     LIMIT ? OFFSET ?`,
         [
-          admin_id,
           ...categories.values,
           ...(userReferrerId ? [userReferrerId] : []),
           limit,

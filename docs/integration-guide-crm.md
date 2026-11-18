@@ -218,3 +218,35 @@ Disable the input of closed Customer Support chats, and show an error if `send_m
 `POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
 
 A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).
+
+## 10. Assigned list and PIC
+
+The PIC (`admin_id` / `admin_name` of a chat) is informative only. Every CS can see, open and reply to every chat.
+
+- `POST /api/chats/crm/chat/active` (the Assigned tab) now returns **every** chat that any CS has replied to within `max_waiting_minutes`, not only the chats of the CS who is logged in. Show the PIC from `admin_name` on each row. `last_message_admin*` is the latest reply of any CS. `adminId` is still accepted in the body but no longer filters.
+- `POST /api/chats/crm/create_service_chat` no longer answers `401 "Chat already assigned to another admin"`. It returns the user's open chat to any CS.
+- Replying to a chat handled by another CS stores the message as usual. Within `max_waiting_minutes` it does not change the PIC (same takeover rule as before).
+- If the CRM disables the input when `admin_id` is not the logged-in CS, remove that check.
+
+## File uploads
+
+Files are sent as base64, through `send_message` (`content_type: 2`, `file_name`, `file_data`) or through `POST /api/chats/crm/chat/upload` (`fileName`, `fileDataBase64`).
+
+- **Maximum 50 MB** (`52 428 800` bytes), measured on the real file, not on the base64 text.
+- **Allowed types**: `jpg`, `jpeg`, `png`, `webp`, `mp4`, `mov`, `pdf`. The server checks the file name's extension, in any letter case.
+- **Check size and type on the device, before encoding.** The server accepts up to about 72 MB of payload so that a 50 MB file fits as base64. Socket.IO drops the connection, with no error event, for anything bigger, and that is what used to show as "something went wrong".
+- The server keeps only the name without its path, limited to letters, digits, `.`, `_` and `-`. The original name stays in `metadata.fileName`.
+
+A refused file is not stored. The sender receives:
+
+| Path | Response |
+|---|---|
+| `send_message` | `send_message_error` `{ chat_id, reason, message, maxBytes }`, to the sending socket only |
+| REST upload | HTTP 400 `{ success: false, reason, message, maxBytes }` |
+| REST body over ~72 MB | HTTP 413 `{ success: false, reason: "file_too_large", message, maxBytes }` |
+
+`reason` is `file_too_large` or `file_type_not_allowed`. Show `message` to the user as is:
+- "File is larger than 50 MB"
+- "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
+
+The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).

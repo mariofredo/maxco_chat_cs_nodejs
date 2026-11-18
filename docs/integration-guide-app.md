@@ -236,3 +236,40 @@ Promotion and Sales chats keep today's behavior.
   - When `current` is `null`, the user has never chatted with CS: create the chat with `POST /api/chats` as today.
 - **Rooms:** join `chat_<current.chat_id>` (`join_chat`) and `user_<userId>` (`join_user`).
 - **Unread:** `GET /api/client/chat/unread/:userId` now also counts automated (`system`) messages.
+
+## File uploads
+
+Files are sent as base64, through `send_message` (`content_type: 2`, `file_name`, `file_data`) or through `POST /api/chats/crm/chat/upload` (`fileName`, `fileDataBase64`).
+
+- **Maximum 50 MB** (`52 428 800` bytes), measured on the real file, not on the base64 text.
+- **Allowed types**: `jpg`, `jpeg`, `png`, `webp`, `mp4`, `mov`, `pdf`. The server checks the file name's extension, in any letter case.
+- **Check size and type on the device, before encoding.** The server accepts up to about 72 MB of payload so that a 50 MB file fits as base64. Socket.IO drops the connection, with no error event, for anything bigger, and that is what used to show as "something went wrong".
+- The server keeps only the name without its path, limited to letters, digits, `.`, `_` and `-`. The original name stays in `metadata.fileName`.
+
+A refused file is not stored. The sender receives:
+
+| Path | Response |
+|---|---|
+| `send_message` | `send_message_error` `{ chat_id, reason, message, maxBytes }`, to the sending socket only |
+| REST upload | HTTP 400 `{ success: false, reason, message, maxBytes }` |
+| REST body over ~72 MB | HTTP 413 `{ success: false, reason: "file_too_large", message, maxBytes }` |
+
+`reason` is `file_too_large` or `file_type_not_allowed`. Show `message` to the user as is:
+- "File is larger than 50 MB"
+- "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
+
+The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).
+
+## Chat list filter
+
+`GET /api/chats/user/:userId` and `POST /api/chats/user` return every chat of the user. That covers all categories, including each closed Customer Support ticket. Both accept an optional category filter:
+
+| Endpoint | How to send it |
+|---|---|
+| `GET /api/chats/user/:userId` | query `?categoryIds=1` or `?categoryIds=1,2` |
+| `POST /api/chats/user` | body `"categoryIds": "1,2"` or `"categoryIds": [1, 2]` |
+
+- `1` = Customer Support (tickets), `2` = Promotion, `3` = Inside Sales.
+- No value, an empty value or an invalid value means every category, the same as before.
+- `pagination.total` counts only the filtered chats. Paging (`page`, `pageSize`) works as before.
+- Example: the user's ticket history is `GET /api/chats/user/<userId>?categoryIds=1&page=1&pageSize=20`. Each row is one ticket (`chat_ticket`, `status`, `created_at`, `closed_at`, last message).

@@ -1,8 +1,8 @@
 import { Server, Socket } from "socket.io";
 import * as chatService from "../services/chatService.js";
-import { ChatClosedError } from "../services/chatService.js";
 import { sendChatPush } from "../services/pushService.js";
 import { deliverSentMessage } from "./messageDelivery.js";
+import { sendMessageErrorPayload } from "./sendMessageErrors.js";
 
 /** Isi notifikasi push: teks pesan, atau label untuk pesan berupa file. */
 function buildPushBody(contentType: number, message: string | null): string {
@@ -51,9 +51,11 @@ export function registerChatSocket(io: Server, socket: Socket) {
         }
       }
     } catch (err) {
-      if (err instanceof ChatClosedError) {
-        // Balasan CS ke tiket CS yang sudah closed tidak disimpan.
-        socket.emit("send_message_error", { chat_id: data?.chat_id, reason: "chat_closed" });
+      // Pesan yang ditolak (tiket CS closed, file terlalu besar / jenis file
+      // tidak diizinkan) tidak disimpan; pengirimnya diberi tahu alasannya.
+      const errorPayload = sendMessageErrorPayload(err, data?.chat_id);
+      if (errorPayload) {
+        socket.emit("send_message_error", errorPayload);
         return;
       }
       console.error("Error handling send_message:", err);

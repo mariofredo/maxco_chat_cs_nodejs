@@ -1,6 +1,8 @@
 import { Server, Socket } from "socket.io";
 import * as chatService from "../services/chatService.js";
+import { ChatClosedError } from "../services/chatService.js";
 import { sendChatPush } from "../services/pushService.js";
+import { deliverSentMessage } from "./messageDelivery.js";
 
 /** Isi notifikasi push: teks pesan, atau label untuk pesan berupa file. */
 function buildPushBody(contentType: number, message: string | null): string {
@@ -27,11 +29,9 @@ export function registerChatSocket(io: Server, socket: Socket) {
       console.log("Received message:", data);
       const newMessagePayload = await chatService.sendMessage(data);
 
-      // broadcast ke member
-      io.to(`chat_${newMessagePayload.chat_id}`).emit(
-        "new_message",
-        newMessagePayload
-      );
+      // broadcast ke member (dan event tiket baru bila pesan dipindah dari
+      // tiket yang sudah closed)
+      deliverSentMessage(io, socket, newMessagePayload);
 
       // Push notification ke device client — hanya pesan dari CRM/admin,
       // bukan balasan client sendiri. Fire-and-forget: push tidak boleh
@@ -51,6 +51,11 @@ export function registerChatSocket(io: Server, socket: Socket) {
         }
       }
     } catch (err) {
+      if (err instanceof ChatClosedError) {
+        // Balasan CS ke tiket CS yang sudah closed tidak disimpan.
+        socket.emit("send_message_error", { chat_id: data?.chat_id, reason: "chat_closed" });
+        return;
+      }
       console.error("Error handling send_message:", err);
     }
   });
@@ -67,7 +72,7 @@ export function registerChatSocket(io: Server, socket: Socket) {
       const success = await chatService.closeChat(chatId);
       const chatData = await chatService.getChatById(chatId);
       if (success) {
-        io.to(`chat_${chatId}`).emit("chat_closed", { chatId, chatData });
+        io.to(`chat_${chatId}`).emit("chat_closed", { chatId, chatData, reason: "agent" });
         console.log(`Chat ${chatId} closed successfully.`);
       } else {
         console.log(`Chat ${chatId} not found or already closed.`);

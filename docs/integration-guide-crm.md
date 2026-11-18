@@ -171,3 +171,50 @@ Use `test.html`: the **App (user)** side plays the mobile app for you.
 6. On the App side of `test.html`, switch **Saya sedang di layar Live Chat** on and off: your chat list shows that user going Online and Offline, and the initial REST status matches.
 7. Type in the App side: your conversation header shows "... sedang mengetik…" and the indicator disappears when the user stops, sends, or after 5 seconds.
 8. Type in your conversation: the App side shows the indicator and clears it the same way.
+
+## 9. Tickets (Customer Support)
+
+Each Customer Support chat is one **ticket** (`chat_ticket`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Inside Sales chats are unchanged.
+
+### 9.1 Automated close
+
+The server closes a Customer Support chat by itself when it waits on the user: the latest message is from CS, nothing was written for `auto_close_minutes`, and that CS message is at most `auto_close_minutes + 60` minutes old (older chats are left for CS to close by hand). It then:
+
+1. stores an automated message and sends it as `new_message` to `chat_<id>`, with `sender_type: "system"`, `sender_id: "system"`, `sender_name: "Maxco Customer Support"`, `metadata: { "type": "auto_close" }`,
+2. sends `chat_closed` `{ chatId, chatData, reason: "auto_no_reply" }` to `chat_<id>`.
+
+- **Render `sender_type: "system"`** messages (in the conversation, in chat history and as `last_message` of a list row). If the CRM parses `sender_type` strictly (`user` / `admin` only), this must change before the backend is deployed.
+- A `system` message is not a CS reply: it does not count for the Assigned / Waiting rules.
+- The chat moves to the Closed list.
+
+Settings live in `list_chat_config` and apply without a restart:
+
+| Key | Value |
+|---|---|
+| `auto_close_minutes` | minutes; `0` = off. Ships as `0`, set to `10` after the app and CRM releases. |
+| `auto_close_message` | text template, `{name}` = user name (or "there"), `{minutes}`. Max 255 characters. |
+
+### 9.2 New ticket
+
+When a user writes to a closed Customer Support ticket, the server stores the message in that user's open ticket (a new `pending` chat with a new ticket number when there is none). The CRM sees it as:
+
+- `chat_room_created` (existing event, same payload as today) for a ticket that was just created, so it appears in the Waiting list;
+- `new_message` for the new chat id, with `previous_chat_id` (the closed chat) and `is_new_ticket`. Both fields are `null` / `false` on normal messages.
+
+### 9.3 Replies to a closed ticket
+
+An admin `send_message` to a **closed Customer Support** chat is rejected: nothing is stored or broadcast, and only the sending socket receives:
+
+```json
+{ "event": "send_message_error", "payload": { "chat_id": 10, "reason": "chat_closed" } }
+```
+
+Disable the input of closed Customer Support chats, and show an error if `send_message_error` arrives. Closed Promotion and Inside Sales chats are unchanged.
+
+### 9.4 Closing a chat
+
+`chat_closed` now carries `reason`: `"agent"` when CS closes the chat, `"auto_no_reply"` for the automated close.
+
+`POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
+
+A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).

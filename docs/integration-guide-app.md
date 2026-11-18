@@ -157,3 +157,82 @@ Use `test.html`: the page plays the CRM side for you.
 6. Type in the app: the CRM header shows "... sedang mengetik…". Stop for 2 seconds, or send: it disappears.
 7. Type in the CRM page: the app shows the indicator, and it disappears after the CRM stops (or after 5 seconds).
 8. Turn Wi-Fi off and on during the Live Chat flow: after reconnect, the status and the user's online state are restored without reopening the screen.
+
+## 9. Tickets (Customer Support)
+
+Each Customer Support chat is one **ticket** (`chat_ticket`, for example `1234-5678-9012`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Sales chats are unchanged.
+
+### 9.1 Automated close
+
+The server closes a Customer Support chat by itself when it is waiting on the user:
+
+- the latest message in the chat is from CS (`sender_type: 'admin'`),
+- nothing was written for `auto_close_minutes` (10 in the design),
+- and that CS message is at most `auto_close_minutes + 60` minutes old. Older chats are left for CS to close by hand.
+
+When it closes a chat, the server:
+
+1. stores an automated message and sends it as a normal `new_message` to `chat_<id>`:
+   ```json
+   { "sender_type": "system", "sender_id": "system", "sender_name": "Maxco Customer Support",
+     "content_type": 1, "message": "Hi Priya, since we haven't received a reply ...",
+     "metadata": { "type": "auto_close" }, "chat_id": 10, "...": "same fields as any new_message" }
+   ```
+2. sends `chat_closed` `{ chatId, chatData, reason: "auto_no_reply" }` to `chat_<id>`,
+3. sends a push notification with the same text.
+
+Render `sender_type: 'system'` as the **Automated message** bubble (`metadata.type === 'auto_close'`). Never treat it as a message from the user. A `system` message also appears in chat history and as `last_message` of a chat.
+
+`chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2).
+
+The feature ships switched off (`auto_close_minutes = 0`). It is switched on after this app version is released.
+
+### 9.2 New ticket
+
+The server opens the new ticket. The app does not call anything extra:
+
+1. Always send the user's message with `send_message` to the **current** Customer Support chat id, even when that ticket is closed. Keep the input enabled after `chat_closed`.
+2. When the addressed ticket is closed, the server stores the message in the user's open ticket (it creates one, with a new ticket number, when there is none), moves this socket into that ticket's room, and sends:
+   - `new_message` to `chat_<new id>` and `user_<userId>` (each socket receives it once), with:
+     - `chat_id`: the new ticket's chat id,
+     - `previous_chat_id`: the closed chat the message was addressed to,
+     - `is_new_ticket`: `true` when the ticket was just created,
+     - `chat_data`: the new ticket's row (`chat_ticket`, `status: "pending"`, ...);
+   - `new_user_chatroom` `{ chatData }` to `user_<userId>`, so the user's other devices can `join_chat` the new room.
+3. On a `new_message` whose `previous_chat_id` is not `null` **and** whose `chat_data.category_id` is `1`, make `chat_id` the current Customer Support chat. Draw "New ticket #<chat_ticket> opened" before the message only when `is_new_ticket` is `true` (otherwise the message went to a ticket that was already open). Do not switch on a mere `chat_id` difference: the socket also receives messages of the Promotion and Sales chats, and a normal message echoes `chat_id` as it was sent (string or number).
+4. Ignore a `chat_closed` whose `chatId` is not the current Customer Support chat (for example a late close of an older ticket).
+
+Two quick messages to a closed ticket open one ticket, not two. For `new_message` of a normal message, `previous_chat_id` is `null` and `is_new_ticket` is `false`.
+
+Promotion and Sales chats keep today's behavior.
+
+### 9.3 Support thread
+
+`GET /api/client/chat/support-thread/:userId?page=1&pageSize=50` (header `X-API-Key`) returns every Customer Support ticket of the user as one thread:
+
+```json
+{
+  "success": true,
+  "data": {
+    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17 09:24:00", "...": "list_messages columns" } ],
+    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17 09:21:00", "closed_at": "2026-11-17 09:35:00" } ],
+    "current":  { "chat_id": 11, "chat_ticket": "2345-6789-0123", "status": "pending" }
+  },
+  "pagination": { "total": 120, "page": 1, "pageSize": 50, "hasMore": true }
+}
+```
+
+- **Paging** works like `GET /api/chats/:chatId/messages`: page 1 is the newest messages, the next pages go back in time, and each page is ordered oldest-first. Load the next page when the user scrolls up while `hasMore` is `true`.
+- **`tickets`** lists the tickets whose messages are on this page. Place the markers by time, not by first or last message:
+  - "New ticket #`chat_ticket` opened" at `created_at`,
+  - "Ticket #`chat_ticket` is closed" at `closed_at` (when not null).
+
+  Times have one-second precision, so break ties this way: the "opened" marker goes **before** messages with the same time, the "closed" marker goes **after** them. The automated message is stored with exactly the ticket's `closed_at`, so it always shows just above "Ticket … is closed".
+
+  Older data can hold messages written to a ticket after it was closed. They show after its closed marker.
+- **`current`** is the user's latest Customer Support chat.
+  - Show "Send a message to open a new ticket." only when `current.status === "closed"`.
+  - Send with `send_message` to `current.chat_id`, even when it is closed (section 9.2).
+  - When `current` is `null`, the user has never chatted with CS: create the chat with `POST /api/chats` as today.
+- **Rooms:** join `chat_<current.chat_id>` (`join_chat`) and `user_<userId>` (`join_user`).
+- **Unread:** `GET /api/client/chat/unread/:userId` now also counts automated (`system`) messages.

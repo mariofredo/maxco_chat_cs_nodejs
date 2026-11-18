@@ -46,8 +46,8 @@ ALTER TABLE list_chats
   FOREIGN KEY (category_id) REFERENCES list_chat_category (category_id) ON DELETE RESTRICT;
 SQL
 
-# 08 dan 09
-cat deploy/sql/08_*.sql deploy/sql/09_*.sql | "$MYSQL" -u root
+# 08, 09 dan 10
+cat deploy/sql/08_*.sql deploy/sql/09_*.sql deploy/sql/10_*.sql | "$MYSQL" -u root
 ```
 
 Cek hasilnya:

@@ -1,20 +1,25 @@
 // Helpers for tests that run against a real MySQL database (`npm run test:db`).
 // This folder sits outside test/ on purpose: `npm test` must never reach a DB,
 // even when a root .env fills MYSQLDATABASE.
-// They only touch rows whose chat_ticket starts with TEST-AWC-.
+// They only touch rows whose chat_ticket starts with TEST-AWC- or whose
+// user_id starts with test-awc- (chats created by the code under test get a
+// random ticket number, so the user id is what marks them).
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
+import type { Server } from "socket.io";
 import { pool } from "../src/config/db.js";
 
 /** The DB suites skip themselves when no database is configured. */
 export const hasDb = Boolean(process.env.MYSQLDATABASE);
 
+const TEST_CHATS = "(c.chat_ticket LIKE 'TEST-AWC-%' OR c.user_id LIKE 'test-awc-%')";
+
 export async function cleanupTestChats(): Promise<void> {
   await pool.query(
     `DELETE m FROM list_messages m
      JOIN list_chats c ON c.id = m.chat_id
-     WHERE c.chat_ticket LIKE 'TEST-AWC-%'`,
+     WHERE ${TEST_CHATS}`,
   );
-  await pool.query("DELETE FROM list_chats WHERE chat_ticket LIKE 'TEST-AWC-%'");
+  await pool.query(`DELETE c FROM list_chats c WHERE ${TEST_CHATS}`);
 }
 
 export async function insertChat(opts: {
@@ -24,20 +29,26 @@ export async function insertChat(opts: {
   adminId?: string | null;
   adminName?: string | null;
   minutesAgo?: number;
+  userId?: string;
+  userName?: string | null;
+  closedMinutesAgo?: number;
 }): Promise<number> {
   const [result] = await pool.query<ResultSetHeader>(
     `INSERT INTO list_chats
-       (chat_ticket, category_id, user_id, user_name, admin_id, admin_name, status, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, NOW() - INTERVAL ? MINUTE)`,
+       (chat_ticket, category_id, user_id, user_name, admin_id, admin_name, status, created_at, closed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NOW() - INTERVAL ? MINUTE,
+             IF(? IS NULL, NULL, NOW() - INTERVAL ? MINUTE))`,
     [
       `TEST-AWC-${opts.tag}`,
       opts.categoryId ?? 1,
-      `test-awc-${opts.tag}`,
-      `Test ${opts.tag}`,
+      opts.userId ?? `test-awc-${opts.tag}`,
+      opts.userName === undefined ? `Test ${opts.tag}` : opts.userName,
       opts.adminId ?? null,
       opts.adminName ?? null,
       opts.status ?? "pending",
       opts.minutesAgo ?? 0,
+      opts.closedMinutesAgo ?? null,
+      opts.closedMinutesAgo ?? 0,
     ],
   );
   return result.insertId;
@@ -45,7 +56,7 @@ export async function insertChat(opts: {
 
 export async function insertMessage(
   chatId: number,
-  senderType: "user" | "admin",
+  senderType: "user" | "admin" | "system",
   senderId: string,
   minutesAgo: number,
 ): Promise<void> {
@@ -67,4 +78,55 @@ export async function getChat(
   const row = rows[0];
   if (!row) throw new Error(`chat ${chatId} not found`);
   return { status: row.status, admin_id: row.admin_id, admin_name: row.admin_name };
+}
+
+export type TestMessage = {
+  id: number;
+  sender_type: string;
+  sender_id: string;
+  sender_name: string | null;
+  message: string | null;
+  metadata: unknown;
+};
+
+/** Messages of one chat, oldest first; a JSON string metadata is parsed. */
+export async function getMessages(chatId: number): Promise<TestMessage[]> {
+  const [rows] = await pool.query<RowDataPacket[]>(
+    `SELECT id, sender_type, sender_id, sender_name, message, metadata
+     FROM list_messages WHERE chat_id = ? ORDER BY created_at, id`,
+    [chatId],
+  );
+  return rows.map((row) => ({
+    id: row.id,
+    sender_type: row.sender_type,
+    sender_id: row.sender_id,
+    sender_name: row.sender_name,
+    message: row.message,
+    metadata: typeof row.metadata === "string" ? JSON.parse(row.metadata) : (row.metadata ?? null),
+  }));
+}
+
+export type Emitted = { rooms: string[]; event: string; payload: any };
+
+/**
+ * Socket.IO server stand-in that records every emit. `io.to(a).to(b).emit()`
+ * records rooms [a, b]; `io.emit()` (everyone) records ["*"]. Pass `io` to setIO.
+ */
+export function fakeIO(): { io: Server; emitted: Emitted[] } {
+  const emitted: Emitted[] = [];
+  const operator = (rooms: string[]) => ({
+    to: (room: string) => operator([...rooms, room]),
+    emit: (event: string, payload: unknown) => {
+      emitted.push({ rooms, event, payload });
+      return true;
+    },
+  });
+  const io = {
+    to: (room: string) => operator([room]),
+    emit: (event: string, payload: unknown) => {
+      emitted.push({ rooms: ["*"], event, payload });
+      return true;
+    },
+  };
+  return { io: io as unknown as Server, emitted };
 }

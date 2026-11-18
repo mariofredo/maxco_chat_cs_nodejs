@@ -199,7 +199,8 @@ The server opens the new ticket. The app does not call anything extra:
      - `is_new_ticket`: `true` when the ticket was just created,
      - `chat_data`: the new ticket's row (`chat_ticket`, `status: "pending"`, ...);
    - `new_user_chatroom` `{ chatData }` to `user_<userId>`, so the user's other devices can `join_chat` the new room.
-3. On a `new_message` whose `previous_chat_id` is set (or whose `chat_id` differs from the current one), make that chat the current one and draw "New ticket #<chat_ticket> opened" before the message.
+3. On a `new_message` whose `previous_chat_id` is not `null` **and** whose `chat_data.category_id` is `1`, make `chat_id` the current Customer Support chat. Draw "New ticket #<chat_ticket> opened" before the message only when `is_new_ticket` is `true` (otherwise the message went to a ticket that was already open). Do not switch on a mere `chat_id` difference: the socket also receives messages of the Promotion and Sales chats, and a normal message echoes `chat_id` as it was sent (string or number).
+4. Ignore a `chat_closed` whose `chatId` is not the current Customer Support chat (for example a late close of an older ticket).
 
 Two quick messages to a closed ticket open one ticket, not two. For `new_message` of a normal message, `previous_chat_id` is `null` and `is_new_ticket` is `false`.
 
@@ -225,6 +226,8 @@ Promotion and Sales chats keep today's behavior.
 - **`tickets`** lists the tickets whose messages are on this page. Place the markers by time, not by first or last message:
   - "New ticket #`chat_ticket` opened" at `created_at`,
   - "Ticket #`chat_ticket` is closed" at `closed_at` (when not null).
+
+  Times have one-second precision, so break ties this way: the "opened" marker goes **before** messages with the same time, the "closed" marker goes **after** them. The automated message is stored with exactly the ticket's `closed_at`, so it always shows just above "Ticket … is closed".
 
   Older data can hold messages written to a ticket after it was closed. They show after its closed marker.
 - **`current`** is the user's latest Customer Support chat.

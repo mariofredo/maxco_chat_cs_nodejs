@@ -2,6 +2,7 @@
 // only look at, and only close, the chats they create.
 import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
+import type { RowDataPacket } from "mysql2";
 import { pool } from "../src/config/db.js";
 import { setIO } from "../src/sockets/io.js";
 import { closeIdleChat, findAutoCloseCandidates } from "../src/services/autoCloseService.js";
@@ -68,6 +69,20 @@ describe("auto-close of idle Customer Support chats", { skip: !hasDb && "MYSQLDA
     assert.equal(emitted[1]!.payload.chatId, id);
     assert.equal(emitted[1]!.payload.reason, "auto_no_reply");
     assert.equal(emitted[1]!.payload.chatData.status, "closed");
+  });
+
+  test("automated message is stamped with the close time", async () => {
+    const id = await insertChat({ tag: "ac-stamp", status: "active" });
+    await insertMessage(id, "admin", "A1", 11);
+    assert.equal(await closeIdleChat(id, 10, "x"), true);
+    const [rows] = await pool.query<RowDataPacket[]>(
+      `SELECT c.closed_at, m.created_at FROM list_chats c
+       JOIN list_messages m ON m.chat_id = c.id AND m.sender_type = 'system'
+       WHERE c.id = ?`,
+      [id],
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]!.created_at, rows[0]!.closed_at);
   });
 
   test("closeIdleChat twice stores one automated message", async () => {

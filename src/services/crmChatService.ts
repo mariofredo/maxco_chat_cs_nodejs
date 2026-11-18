@@ -388,9 +388,11 @@ export async function fetchChatById(chatId: string) {
     return rows[0];
 }
 
+// A chat that is already closed keeps its closed_at (the app draws the
+// "ticket closed" marker there), so a second close changes nothing.
 export async function closeChatById(chatId: string) {
     const [result] = await pool.query(
-      "UPDATE list_chats SET status = 'closed', closed_at = NOW() WHERE id = ?",
+      "UPDATE list_chats SET status = 'closed', closed_at = NOW() WHERE id = ? AND status <> 'closed'",
       [chatId]
     );
     return (result as any).affectedRows > 0;

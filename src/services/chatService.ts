@@ -260,6 +260,92 @@ export class ChatClosedError extends Error {
 /** Customer Support (list_chat_category 1): the only category with tickets. */
 const SUPPORT_CATEGORY_ID = 1;
 
+export type MessageRow = {
+  chat_id: number | string;
+  sender_id: string;
+  sender_type: string;
+  sender_name: string | null;
+  message: string | null;
+  content_type: number;
+  content_url: string | null;
+  metadata: string | null;
+};
+
+/**
+ * Stores a message unless its chat is a closed Customer Support ticket (or
+ * does not exist). Check and insert are one statement, so a ticket closed
+ * by the auto-close between routing and storing cannot receive the message.
+ * Returns the new message id, or null when nothing was stored.
+ */
+export async function insertMessageIfOpen(row: MessageRow): Promise<number | null> {
+  const [result] = await pool.query<ResultSetHeader>(
+    `INSERT INTO list_messages
+       (chat_id, sender_id, sender_type, sender_name, message, content_type, content_url, metadata)
+     SELECT lc.id, ?, ?, ?, ?, ?, ?, ?
+     FROM list_chats lc
+     WHERE lc.id = ? AND NOT (lc.category_id = ? AND lc.status = 'closed')`,
+    [
+      row.sender_id,
+      row.sender_type,
+      row.sender_name,
+      row.message,
+      row.content_type,
+      row.content_url,
+      row.metadata,
+      row.chat_id,
+      SUPPORT_CATEGORY_ID,
+    ]
+  );
+  return result.affectedRows === 1 ? result.insertId : null;
+}
+
+type MessageRoute = {
+  /** The chat the message goes to. */
+  chatId: number | string;
+  /** The closed ticket the message was addressed to, when it was moved. */
+  previousChatId: number | null;
+  isNewTicket: boolean;
+};
+
+/**
+ * Where a message addressed to [chatId] is stored.
+ *
+ * A closed Customer Support ticket takes no more messages: a message from
+ * the ticket's own user goes to that user's open ticket (created when there
+ * is none); an admin message is rejected (ChatClosedError), and so is a user
+ * message from anyone else than the ticket's user.
+ */
+async function routeMessage(
+  chatId: number | string,
+  senderId: string,
+  senderType: string,
+  senderName: string | null,
+): Promise<MessageRoute> {
+  const chat = await getChatById(String(chatId));
+  if (
+    !chat ||
+    Number(chat.category_id) !== SUPPORT_CATEGORY_ID ||
+    chat.status !== "closed"
+  ) {
+    return { chatId, previousChatId: null, isNewTicket: false };
+  }
+  if (senderType === "admin") {
+    throw new ChatClosedError(chatId);
+  }
+  if (String(senderId) !== String(chat.user_id)) {
+    throw new Error(`Sender ${senderId} does not own chat ${chat.id}`);
+  }
+  const { chat: openChat, isNew } = await createNewChat(
+    String(chat.user_id),
+    chat.user_name || senderName || "",
+    chat.user_referrer_id ?? "",
+  );
+  if (!openChat) {
+    throw new Error(`Could not open a new ticket for chat ${chatId}`);
+  }
+  return { chatId: Number(openChat.id), previousChatId: Number(chat.id), isNewTicket: isNew };
+}
+
 export async function sendMessage(input: SendMessageInput) {
   const {
     sender_id,
@@ -278,33 +364,8 @@ export async function sendMessage(input: SendMessageInput) {
     throw new Error("Invalid sender_type");
   }
 
-  // A closed Customer Support ticket takes no more messages: a user message
-  // opens (or reuses) the user's open ticket and is stored there; an admin
-  // message is rejected.
-  let chat_id: number | string = input.chat_id;
-  let previousChatId: number | null = null;
-  let isNewTicket = false;
-  const addressedChat = await getChatById(String(chat_id));
-  if (
-    addressedChat &&
-    Number(addressedChat.category_id) === SUPPORT_CATEGORY_ID &&
-    addressedChat.status === "closed"
-  ) {
-    if (sender_type === "admin") {
-      throw new ChatClosedError(chat_id);
-    }
-    const { chat: openChat, isNew } = await createNewChat(
-      String(addressedChat.user_id),
-      addressedChat.user_name || sender_name || "",
-      addressedChat.user_referrer_id ?? "",
-    );
-    if (!openChat) {
-      throw new Error(`Could not open a new ticket for chat ${chat_id}`);
-    }
-    previousChatId = Number(addressedChat.id);
-    chat_id = Number(openChat.id);
-    isNewTicket = isNew;
-  }
+  let route = await routeMessage(input.chat_id, sender_id, sender_type, sender_name);
+  let chat_id = route.chatId;
 
   // An admin reply to a waiting chat assigns it to that admin. Checked on the
   // chat itself, before the message is stored (a stored admin message ends
@@ -345,21 +406,35 @@ export async function sendMessage(input: SendMessageInput) {
     
   }
 
-  const [result] = await pool.query<ResultSetHeader>(
-    `INSERT INTO list_messages 
-        (chat_id, sender_id, sender_type, sender_name, message, content_type, content_url, metadata) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      chat_id,
-      sender_id,
-      sender_type,
-      sender_name,
-      finalMessage,
-      content_type,
-      contentUrl,
-      metadataValue != null ? JSON.stringify(metadataValue) : null
-    ]
-  );
+  const row: MessageRow = {
+    chat_id,
+    sender_id,
+    sender_type,
+    sender_name,
+    message: finalMessage,
+    content_type,
+    content_url: contentUrl,
+    metadata: metadataValue != null ? JSON.stringify(metadataValue) : null,
+  };
+  let insertId = await insertMessageIfOpen(row);
+  if (insertId === null) {
+    // The ticket closed after routing (auto-close in the same moment), or the
+    // chat does not exist: route once more and store it where it belongs.
+    const retry = await routeMessage(chat_id, sender_id, sender_type, sender_name);
+    if (retry.previousChatId === null) {
+      throw new Error(`Chat ${chat_id} not found`);
+    }
+    route = {
+      chatId: retry.chatId,
+      previousChatId: route.previousChatId ?? retry.previousChatId,
+      isNewTicket: route.isNewTicket || retry.isNewTicket,
+    };
+    chat_id = route.chatId;
+    insertId = await insertMessageIfOpen({ ...row, chat_id });
+    if (insertId === null) {
+      throw new Error(`Could not store the message in chat ${chat_id}`);
+    }
+  }
 
   const [chatRows] = await pool.query<RowDataPacket[]>(
     "SELECT * FROM list_chats WHERE id = ?",
@@ -368,7 +443,7 @@ export async function sendMessage(input: SendMessageInput) {
   const chatData = (chatRows[0] || null) as ChatDataInfo | null;
 
   return {
-    id: result.insertId,
+    id: insertId,
     chat_id,
     sender_id,
     sender_type,
@@ -382,14 +457,15 @@ export async function sendMessage(input: SendMessageInput) {
     chat_data: chatData,
     // Set when the message was addressed to a closed ticket and stored in the
     // user's open ticket instead (chat_id / chat_data are that open ticket).
-    previous_chat_id: previousChatId,
-    is_new_ticket: isNewTicket
+    previous_chat_id: route.previousChatId,
+    is_new_ticket: route.isNewTicket
   };
 }
 
+// A chat that is already closed keeps its closed_at and is not announced again.
 export async function closeChat(chatId: string) {
   const [result] = await pool.query(
-    "UPDATE list_chats SET status = 'closed', closed_at = NOW() WHERE id = ?",
+    "UPDATE list_chats SET status = 'closed', closed_at = NOW() WHERE id = ? AND status <> 'closed'",
     [chatId]
   );
   return (result as any).affectedRows > 0;

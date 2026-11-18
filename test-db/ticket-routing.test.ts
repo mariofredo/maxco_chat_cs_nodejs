@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { RowDataPacket } from "mysql2";
 import { pool } from "../src/config/db.js";
 import { setIO } from "../src/sockets/io.js";
-import { ChatClosedError, sendMessage } from "../src/services/chatService.js";
+import { ChatClosedError, insertMessageIfOpen, sendMessage } from "../src/services/chatService.js";
 import { cleanupTestChats, fakeIO, getChat, getMessages, hasDb, insertChat } from "./helpers.js";
 
 after(() => pool.end());
@@ -109,6 +109,57 @@ describe("ticket routing in sendMessage", { skip: !hasDb && "MYSQLDATABASE not s
     const id = await insertChat({ tag: "rt-open", status: "active" });
     const res = await userMsg(id, "test-awc-rt-open");
     assert.deepEqual([Number(res.chat_id), res.previous_chat_id, res.is_new_ticket], [id, null, false]);
+  });
+
+  test("a user cannot open a ticket from another user's closed chat", async () => {
+    const victim = await insertChat({ tag: "rt-owner", status: "closed" });
+    await assert.rejects(userMsg(victim, "test-awc-rt-intruder"), /does not own/);
+    const [rows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) AS n FROM list_chats WHERE user_id = 'test-awc-rt-owner'",
+    );
+    assert.equal(Number(rows[0]!.n), 1, "no new ticket for the owner");
+    assert.equal((await getMessages(victim)).length, 0);
+  });
+
+  test("owner id sent as a number still opens the new ticket", async () => {
+    const old = await insertChat({ tag: "rt-numid", userId: "777001", status: "closed" });
+    try {
+      const res = await sendMessage({
+        chat_id: old,
+        sender_id: 777001 as unknown as string,
+        sender_type: "user",
+        sender_name: "N",
+        content_type: 1,
+        message: "hi",
+      });
+      assert.equal(res.previous_chat_id, old);
+    } finally {
+      await pool.query(
+        "DELETE m FROM list_messages m JOIN list_chats c ON c.id = m.chat_id WHERE c.user_id = '777001'",
+      );
+      await pool.query("DELETE FROM list_chats WHERE user_id = '777001'");
+    }
+  });
+
+  test("insert step refuses a CS ticket that closed after routing", async () => {
+    const id = await insertChat({ tag: "rt-gap", status: "closed" });
+    const row = {
+      chat_id: id,
+      sender_id: "test-awc-rt-gap",
+      sender_type: "user",
+      sender_name: "U",
+      message: "late reply",
+      content_type: 1,
+      content_url: null,
+      metadata: null,
+    };
+    assert.equal(await insertMessageIfOpen(row), null);
+    assert.equal((await getMessages(id)).length, 0);
+
+    const open = await insertChat({ tag: "rt-gap-open", status: "active" });
+    assert.ok(await insertMessageIfOpen({ ...row, chat_id: open }));
+    const promo = await insertChat({ tag: "rt-gap-promo", categoryId: 2, status: "closed" });
+    assert.ok(await insertMessageIfOpen({ ...row, chat_id: promo }), "only CS tickets are gated");
   });
 
   test("a client cannot send a system message", async () => {

@@ -91,32 +91,56 @@ export async function findAutoCloseCandidates(minutes: number): Promise<number[]
  *
  * The close is one guarded UPDATE: a user message that arrived in the
  * meantime, or a second process, makes it a no-op (false), so the automated
- * message is never stored twice.
+ * message is never stored twice. The close and the automated message are one
+ * transaction (a chat is never left closed without its message), and the
+ * message carries the close time as created_at, so it sorts before the
+ * "ticket closed" marker the app draws at closed_at.
  */
 export async function closeIdleChat(chatId: number, minutes: number, template: string): Promise<boolean> {
-  const [result] = await pool.query<ResultSetHeader>(
-    `UPDATE list_chats lc
-     SET lc.status = 'closed', lc.closed_at = NOW()
-     WHERE lc.id = ? AND ${IDLE_CHAT_CONDITIONS}`,
-    [chatId, ...idleBindings(minutes)],
-  );
-  if (result.affectedRows !== 1) return false;
-
-  const chat = await getChatById(String(chatId));
-  const text = renderAutoCloseMessage(template, { name: chat?.user_name, minutes });
   const metadata = { type: "auto_close" };
+  let text: string;
+  let messageId: number;
 
-  const [inserted] = await pool.query<ResultSetHeader>(
-    `INSERT INTO list_messages
-       (chat_id, sender_id, sender_type, sender_name, message, content_type, content_url, metadata)
-     VALUES (?, ?, 'system', ?, ?, 1, NULL, ?)`,
-    [chatId, SYSTEM_SENDER_ID, SYSTEM_SENDER_NAME, text, JSON.stringify(metadata)],
-  );
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const [result] = await conn.query<ResultSetHeader>(
+      `UPDATE list_chats lc
+       SET lc.status = 'closed', lc.closed_at = NOW()
+       WHERE lc.id = ? AND ${IDLE_CHAT_CONDITIONS}`,
+      [chatId, ...idleBindings(minutes)],
+    );
+    if (result.affectedRows !== 1) {
+      await conn.rollback();
+      return false;
+    }
+
+    const [chatRows] = await conn.query<RowDataPacket[]>(
+      "SELECT user_name FROM list_chats WHERE id = ?",
+      [chatId],
+    );
+    text = renderAutoCloseMessage(template, { name: chatRows[0]?.user_name, minutes });
+
+    const [inserted] = await conn.query<ResultSetHeader>(
+      `INSERT INTO list_messages
+         (chat_id, sender_id, sender_type, sender_name, message, content_type, content_url, metadata, created_at)
+       SELECT lc.id, ?, 'system', ?, ?, 1, NULL, ?, lc.closed_at
+       FROM list_chats lc WHERE lc.id = ?`,
+      [SYSTEM_SENDER_ID, SYSTEM_SENDER_NAME, text, JSON.stringify(metadata), chatId],
+    );
+    messageId = inserted.insertId;
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
 
   const chatData = await getChatById(String(chatId));
   const io = getIO();
   io.to(`chat_${chatId}`).emit("new_message", {
-    id: inserted.insertId,
+    id: messageId,
     chat_id: chatId,
     sender_id: SYSTEM_SENDER_ID,
     sender_type: "system",
@@ -125,7 +149,8 @@ export async function closeIdleChat(chatId: number, minutes: number, template: s
     message: text,
     content_url: null,
     metadata,
-    created_at: new Date(),
+    // Same value as the stored created_at (the close time).
+    created_at: chatData?.closed_at ?? new Date(),
     is_just_assigned: false,
     chat_data: chatData,
     previous_chat_id: null,

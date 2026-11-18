@@ -1,6 +1,7 @@
 import { after, before, beforeEach, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import type { Request, Response } from "express";
+import type { RowDataPacket } from "mysql2";
 import { pool } from "../src/config/db.js";
 import { setIO } from "../src/sockets/io.js";
 import { crmCloseChat } from "../src/controllers/crmChatController.js";
@@ -43,6 +44,17 @@ describe("CRM REST close", { skip: !hasDb && "MYSQLDATABASE not set" }, () => {
     assert.equal(emitted[0]!.payload.chatId, id);
     assert.equal(emitted[0]!.payload.reason, "agent");
     assert.equal(emitted[0]!.payload.chatData.status, "closed");
+  });
+
+  test("closing a closed chat keeps closed_at and does not emit again", async () => {
+    const id = await insertChat({ tag: "cc-twice", status: "closed", closedMinutesAgo: 30 });
+    const before = (await pool.query<RowDataPacket[]>("SELECT closed_at FROM list_chats WHERE id = ?", [id]))[0][0]!.closed_at;
+    await crmCloseChat({ body: { chatId: id } } as unknown as Request, res as unknown as Response);
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.success, true);
+    assert.deepEqual(emitted, []);
+    const after = (await pool.query<RowDataPacket[]>("SELECT closed_at FROM list_chats WHERE id = ?", [id]))[0][0]!.closed_at;
+    assert.equal(after, before);
   });
 
   test("unknown chat emits nothing", async () => {

@@ -93,7 +93,7 @@ CREATE TABLE `list_content_type` (
 CREATE TABLE `list_messages` (
   `id` bigint NOT NULL AUTO_INCREMENT,
   `chat_id` bigint NOT NULL,
-  `sender_type` enum('user','admin') COLLATE utf8mb4_general_ci NOT NULL,
+  `sender_type` enum('user','admin','system') COLLATE utf8mb4_general_ci NOT NULL,
   `sender_id` varchar(100) COLLATE utf8mb4_general_ci NOT NULL,
   `sender_name` varchar(100) COLLATE utf8mb4_general_ci DEFAULT NULL,
   `message` text COLLATE utf8mb4_general_ci,
@@ -164,6 +164,8 @@ UNLOCK TABLES;
 
 LOCK TABLES `list_chat_config` WRITE;
 /*!40000 ALTER TABLE `list_chat_config` DISABLE KEYS */;
+INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('auto_close_message','Hi {name}, since we haven\'t received a reply from you in the last {minutes} minutes, this chat will now be closed. Please contact us again if you have any further questions.','Automated message when a chat closes automatically. {name} = user name, {minutes} = auto_close_minutes');
+INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('auto_close_minutes','0','Minutes without a user reply after an admin message before a Customer Support chat closes automatically. 0 = off');
 INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`) VALUES ('max_waiting_minutes','120','Waiting threshold in minutes before an active chat moves to the waiting list');
 /*!40000 ALTER TABLE `list_chat_config` ENABLE KEYS */;
 UNLOCK TABLES;

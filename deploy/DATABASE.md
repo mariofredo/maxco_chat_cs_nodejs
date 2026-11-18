@@ -97,8 +97,8 @@ Every message of every chat, oldest to newest by `created_at`, then `id`.
 |---|---|---|---|---|
 | `id` | `bigint` | no | auto increment | Message ID. Breaks ties between messages with the same second in `created_at`. |
 | `chat_id` | `bigint` | no | — | The chat, `list_chats.id`. |
-| `sender_type` | `enum('user','admin')` | no | — | `user` = sent by the member (mobile app); `admin` = sent by CS / Sales (CRM). |
-| `sender_id` | `varchar(100)` | no | — | Member ID (when `user`) or CRM ID (when `admin`). |
+| `sender_type` | `enum('user','admin','system')` | no | — | `user` = sent by the member (mobile app); `admin` = sent by CS / Sales (CRM); `system` = automated message written by the server when it closes an idle Customer Support chat (`metadata` `{"type":"auto_close"}`). |
+| `sender_id` | `varchar(100)` | no | — | Member ID (when `user`), CRM ID (when `admin`), or `system`. |
 | `sender_name` | `varchar(100)` | yes | NULL | Sender's display name at sending time. |
 | `message` | `text` | yes | NULL | The text of a text message. |
 | `content_url` | `text` | yes | NULL | File messages: path of the stored file, e.g. `uploads/chat/1763358000000_invoice.pdf`. NULL for text. |
@@ -184,7 +184,7 @@ Keys and indexes:
 
 ### `list_chat_config`
 
-App settings as key / value pairs. Its row is required (§3).
+App settings as key / value pairs. Its rows are required (§3).
 
 | Column | Type | Null | Default | Meaning |
 |---|---|---|---|---|
@@ -224,6 +224,8 @@ chats and messages. The app uses the numbers directly, so keep the IDs exactly a
 | `config_key` | `config_value` | Meaning |
 |---|---|---|
 | `max_waiting_minutes` | `120` | A `pending` or `active` chat whose last CS / Sales message is older than this many minutes, or that has no CS / Sales message yet, shows in the CRM's waiting list instead of its active list. |
+| `auto_close_minutes` | `0` | `0` = off. Above `0`: a Customer Support chat whose last message is from CS and is at least this many minutes old (and at most this + 60) is closed automatically with a `system` message. Read every minute, no restart needed. |
+| `auto_close_message` | `Hi {name}, since we haven't received …` | Text of that automated message; `{name}` = member name, `{minutes}` = `auto_close_minutes`. At most 255 characters. |
 
 ---
 
@@ -275,8 +277,8 @@ by the app, so the database accepts rows that break them and the app then behave
 9. **`metadata` must be valid JSON or NULL.** Anything else fails with
    `ERROR 3819 (HY000): Check constraint 'list_messages_chk_1' is violated.` (MariaDB: `ERROR 4025`).
 10. **Sender:** `sender_type = 'user'` with the member ID in `sender_id`, or `sender_type = 'admin'`
-    with the CRM ID; `sender_name` = display name.
-11. **Read state:** `read_at` NULL means unread. The mobile app's unread badge counts `admin`
+    with the CRM ID; `sender_name` = display name. Do not import `system`: only the server writes it.
+11. **Read state:** `read_at` NULL means unread. The mobile app's unread badge counts `admin` and `system`
     messages with `read_at` NULL, so set `read_at` (for example to the message's `created_at`) on
     old messages that should not show as unread.
 12. **Time zone.** The time columns are `timestamp`: the database stores them in UTC and converts

@@ -224,7 +224,7 @@ chats and messages. The app uses the numbers directly, so keep the IDs exactly a
 | `config_key` | `config_value` | Meaning |
 |---|---|---|
 | `max_waiting_minutes` | `120` | A `pending` or `active` chat whose last CS / Sales message is older than this many minutes, or that has no CS / Sales message yet, shows in the CRM's waiting list instead of its active list. |
-| `auto_close_minutes` | `0` | `0` = off. Above `0`: a Customer Support chat whose last message is from CS and is at least this many minutes old (and at most this + 60) is closed automatically with a `system` message. Read every minute, no restart needed. |
+| `auto_close_minutes` | `10` | `0` = off. Above `0`: a Customer Support chat whose last message is from CS and is at least this many minutes old (and at most this + 60) is closed automatically with a `system` message. Read every minute, no restart needed. |
 | `auto_close_message` | `Hi {name}, since we haven't received …` | Text of that automated message; `{name}` = member name, `{minutes}` = `auto_close_minutes`. At most 255 characters. |
 
 ---

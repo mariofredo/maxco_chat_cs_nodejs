@@ -129,8 +129,8 @@ Important notes:
   (`list_chats.user_id` and `list_messages(chat_id, created_at, id)`); without them every page of
   the list and of the message history scans the whole table. It is optional but recommended.
   `sql/dbchanges_202611181400.sql` adds the automated message type and the auto-close settings that
-  the Customer Support ticket flow needs; run it once. Auto-close stays off until
-  `auto_close_minutes` in `list_chat_config` is set above `0`.
+  the Customer Support ticket flow needs; run it once. It switches auto-close on with
+  `auto_close_minutes = 10`; set it to `0` in `list_chat_config` to switch it off.
 - `11_dbchanges_202611161515.sql` (source repo: `sql/dbchanges_202611161515.sql`) **repairs** a
   database where `07_dbchanges_202610191417.sql` stopped at line 53 with `ERROR 1215 ... Cannot add
   foreign key constraint` (MySQL 8) or `ERROR 1901 ... cannot be used in the GENERATED ALWAYS AS clause`

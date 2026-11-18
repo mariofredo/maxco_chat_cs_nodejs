@@ -6,8 +6,9 @@
 -- (deploy/sql/10_dbchanges_202611181400.sql is the same change for new deployments).
 -- One-time only: not idempotent (plain ALTER TABLE / INSERT).
 --
--- auto_close_minutes starts at 0 (off). Set it to 10 once the app and the CRM
--- that show automated messages are released; no restart is needed.
+-- auto_close_minutes starts at 10 (on). Run this file once the app and the CRM
+-- that show automated messages are released (or set it to 0 right after);
+-- the value is read every minute, no restart is needed.
 -- ============================================================================
 
 ALTER TABLE list_messages
@@ -15,7 +16,7 @@ ALTER TABLE list_messages
 
 INSERT INTO `list_chat_config` (`config_key`, `config_value`, `description`)
 VALUES
-  ('auto_close_minutes', '0',
+  ('auto_close_minutes', '10',
    'Minutes without a user reply after an admin message before a Customer Support chat closes automatically. 0 = off'),
   ('auto_close_message',
    'Hi {name}, since we haven''t received a reply from you in the last {minutes} minutes, this chat will now be closed. Please contact us again if you have any further questions.',

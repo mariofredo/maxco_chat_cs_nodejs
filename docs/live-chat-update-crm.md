@@ -116,7 +116,7 @@ Settings live in `list_chat_config` and take effect within about a minute, witho
 
 | Key | Value |
 |---|---|
-| `auto_close_minutes` | `0` = off (the default after migration 10). Set to `10` after the app and CRM releases. |
+| `auto_close_minutes` | `10` after migration 10 (on); `0` = off. Set `0` until the app and CRM releases if they are not out yet. |
 | `auto_close_message` | Template text; `{name}` = user name, `{minutes}` = the setting. Max 255 characters. |
 
 ```sql
@@ -164,4 +164,4 @@ Open `test.html` (repo root) against the backend. The **CRM** panel plays CS and
 
 - Release a CRM version that renders `sender_type: "system"` and handles `send_message_error`.
 - The backend team runs migration 10 (`sql/dbchanges_202611181400.sql`) and sets nginx `client_max_body_size 72m`.
-- Auto-close stays off until the app and CRM are released.
+- Migration 10 turns auto-close on (`auto_close_minutes = 10`). Run it after the app and CRM are released, or set the value to `0` right after it until then.

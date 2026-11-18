@@ -1,6 +1,6 @@
 import type { Request, Response } from "express";
 import { fetchPendingChats, fetchClosedChat, fetchChatById, fetchActiveChats, fetchReferredChats, closeChatById, assignedUserChatData, waitingUserChatData, createNewChat, userPromotionChatData, openPromotionChat as openPromotionChatService, openInsideSalesChat as openInsideSalesChatService, getMaxWaitingMinutes } from "../services/crmChatService.js";
-import { saveChatFile } from "../utils/chatFileStorage.js";
+import { FileUploadError, saveChatFile } from "../utils/chatFileStorage.js";
 import { getIO } from "../sockets/io.js";
 import { fetchChatMessages, getChatById, markUpdateReadAt } from "../services/chatService.js";
 import { getPresence } from "../services/presenceRuntime.js";
@@ -144,6 +144,14 @@ export async function uploadChatFile(req: Request, res: Response) {
     const fullUrl = `${checkUpload.contentUrl}`;
     res.json({ success: true, message: "File uploaded successfully", data: {file_url : fullUrl} });
   } catch (err) {
+    if (err instanceof FileUploadError) {
+      return res.status(400).json({
+        success: false,
+        reason: err.reason,
+        message: err.message,
+        maxBytes: err.maxBytes,
+      });
+    }
     console.error(err);
     return res.status(500).json({ success: false, message: "File upload failed" });
   }

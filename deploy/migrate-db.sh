@@ -17,8 +17,8 @@
 # Existing data  -> backs the database up (BACKUP_DIR, default: the folder
 #                   above this one, so the dump never ships with deploy/), then
 #                   runs only the files whose change is not in the database
-#                   yet, then 11 (safe to repeat). 07 is never run on existing
-#                   data: 11 applies the same change safely.
+#                   yet, then 11 (safe to repeat). 07 is an empty placeholder:
+#                   11 makes its change.
 # A file that looks half applied stops the script before anything changes.
 #
 # Needs the mysql client (and mysqldump for existing data) on this machine.
@@ -121,7 +121,7 @@ else
     if [ "$present" = "$total" ]; then
       echo "    done  $f"
     elif [ "${f:0:3}" = "07_" ]; then
-      echo "    skip  $f   (11 applies it safely on existing data)"
+      echo "    skip  $f   (empty placeholder: 11 makes this change)"
     elif [ "$present" = 0 ]; then
       echo "    run   $f"; PLAN+=("$f")
     else

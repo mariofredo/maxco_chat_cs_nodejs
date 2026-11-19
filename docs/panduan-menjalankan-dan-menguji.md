@@ -28,7 +28,7 @@ npm install
 
 ## 2. Siapkan database (DB kosong)
 
-Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan semua file SQL sesuai urutan nama, dari `01` sampai `11`. Semua file bisa langsung dijalankan di MySQL 8.0 maupun MariaDB. `11_dbchanges_202611161515.sql` adalah file perbaikan yang aman dijalankan berulang kali; di DB kosong file ini tidak mengubah apa pun.
+Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan semua file SQL sesuai urutan nama, dari `01` sampai `11`. Semua file bisa langsung dijalankan di MySQL 8.0 maupun MariaDB. `07_dbchanges_202610191417.sql` sengaja kosong; perubahannya (satu chat inside sales per user) dibuat oleh `11_dbchanges_202611161515.sql`, yang aman dijalankan berulang kali.
 
 ```bash
 MYSQL="/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe"

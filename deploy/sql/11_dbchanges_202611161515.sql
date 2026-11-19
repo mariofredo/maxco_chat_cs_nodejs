@@ -1,12 +1,13 @@
 -- ============================================================================
--- 11_dbchanges_202611161515.sql - Repair: one inside sales chat per user
--- Applies to: ANY database that already ran 01_schema.sql .. 09_dbchanges_*.sql,
--- in particular one where 07_dbchanges_202610191417.sql stopped at line 53 with
+-- 11_dbchanges_202611161515.sql - One inside sales chat (category_id = 3) per user
+-- The only file that makes this change (07 is an empty placeholder).
+-- Applies to: ANY database that ran 01_schema.sql .. 10_dbchanges_*.sql, including
+-- one where an earlier version of 07_dbchanges_202610191417.sql stopped at line 53 with
 --   ERROR 1215 (HY000): Cannot add foreign key constraint            (MySQL 8)
 --   ERROR 1901 (HY000): Function or expression 'category_id' cannot be used ...
 -- (for an existing handover, run sql/dbchanges_202611161515.sql instead).
 -- New deployments: no manual run needed - docker-entrypoint-initdb.d applies
--- 01 -> 11 in order (this file then changes nothing).
+-- 01 -> 11 in order, and this file makes the change there.
 -- Idempotent: safe to run more than once. Back up first (mysqldump): step 1
 -- deletes duplicate inside sales chats after moving their messages.
 --
@@ -14,7 +15,7 @@
 --   1) removes inside sales chats (category_id = 3) duplicated while the unique
 --      index was missing: per user the newest ACTIVE chat is kept (the newest
 --      chat when none is active), the messages of the others move to it, and
---      their admin history is deleted with them (same as 07),
+--      their admin history is deleted with them,
 --   2) re-creates FK_list_chats_list_chat_category with ON UPDATE RESTRICT
 --      when it still cascades (MySQL 8 / MariaDB refuse the generated column
 --      below on a cascading base column), and adds it back when it is missing

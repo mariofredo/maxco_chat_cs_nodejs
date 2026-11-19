@@ -119,8 +119,8 @@ that runs it.
 - **Empty server:** runs every file in `sql/` in order.
 - **Existing database:** dumps it to `../backup-maxco_chat_im-<time>.sql` (outside `deploy/`; set
   `BACKUP_DIR` to change), runs only the files whose change is not in the database yet, then
-  `11_dbchanges_202611161515.sql`. `07` is never run on existing data; `11` applies the same change
-  safely. Running the script again is safe.
+  `11_dbchanges_202611161515.sql`. `07` is an empty placeholder; `11` makes its change. Running the
+  script again is safe.
 - **A file that is half applied** stops the script before anything changes.
 - `YES=1` skips the question. `AUTO_CLOSE_MINUTES=0` also switches auto-close off at the end, for
   example until the app and CRM releases are out.
@@ -145,9 +145,11 @@ Important notes:
   **must match** `MYSQLDATABASE` in `.env`. If the client uses a different name, change it in both places.
 - Except `11_dbchanges_202611161515.sql`, no file is **idempotent** — run them once against an empty database, in file-name order.
   For an **existing** database, request the incremental migration files (in the source repo: the
-  `sql/dbchanges_*.sql` folder). The latest one, `sql/dbchanges_202610191417.sql`, is required for
+  `sql/dbchanges_*.sql` folder). `sql/dbchanges_202611161515.sql` (the same file as `11_dbchanges_202611161515.sql`) is required for
   databases that already run the app: it removes the duplicate inside sales chats (category 3) that
   older builds could create in parallel, and adds the unique index that prevents them.
+  `07_dbchanges_202610191417.sql` / `sql/dbchanges_202610191417.sql` is now an empty placeholder:
+  running it changes nothing, and `11` makes its change.
   `sql/dbchanges_202610221020.sql` adds the indexes the client app pagination needs
   (`list_chats.user_id` and `list_messages(chat_id, created_at, id)`); without them every page of
   the list and of the message history scans the whole table. It is optional but recommended.

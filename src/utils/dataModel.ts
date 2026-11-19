@@ -1,4 +1,4 @@
-/** One `list_chats` row (the pool returns dates as strings: dateStrings). */
+/** One `list_chats` row (the pool returns times as ISO 8601 UTC strings: utils/dbTime). */
 export type ChatDataInfo = {
   id: number;
   chat_ticket: string;

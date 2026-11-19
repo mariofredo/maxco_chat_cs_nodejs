@@ -11,7 +11,9 @@ after(() => pool.end());
 const { io } = fakeIO();
 setIO(io);
 
-const ISO_UTC = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+// Times keep the MySQL format, without a zone; the value is UTC.
+const RAW_TIME = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/;
+const parseUtc = (value: string) => Date.parse(`${value.replace(" ", "T")}Z`);
 
 describe("times are UTC whatever the MySQL server time zone", { skip: !hasDb && "MYSQLDATABASE not set" }, () => {
   before(cleanupTestChats);
@@ -30,9 +32,9 @@ describe("times are UTC whatever the MySQL server time zone", { skip: !hasDb && 
     }
   });
 
-  test("NOW() comes out as UTC in ISO 8601 with Z", async () => {
+  test("NOW() comes out as UTC in the MySQL format", async () => {
     const [rows] = await pool.query<RowDataPacket[]>("SELECT NOW() AS now_, UTC_TIMESTAMP() AS utc");
-    assert.match(String(rows[0]!.now_), ISO_UTC);
+    assert.match(String(rows[0]!.now_), RAW_TIME);
     assert.equal(rows[0]!.now_, rows[0]!.utc);
   });
 
@@ -40,11 +42,11 @@ describe("times are UTC whatever the MySQL server time zone", { skip: !hasDb && 
     const id = await insertChat({ tag: "utc-row" });
     const [rows] = await pool.query<RowDataPacket[]>("SELECT created_at FROM list_chats WHERE id = ?", [id]);
     const createdAt = String(rows[0]!.created_at);
-    assert.match(createdAt, ISO_UTC);
-    assert.ok(Math.abs(Date.parse(createdAt) - Date.now()) < 10_000, `${createdAt} is now`);
+    assert.match(createdAt, RAW_TIME);
+    assert.ok(Math.abs(parseUtc(createdAt) - Date.now()) < 10_000, `${createdAt} is now in UTC`);
   });
 
-  test("sendMessage returns the stored created_at of the message", async () => {
+  test("sendMessage sends chat_data times in UTC", async () => {
     const id = await insertChat({ tag: "utc-send", status: "active" });
     const res = await sendMessage({
       chat_id: id,
@@ -54,9 +56,8 @@ describe("times are UTC whatever the MySQL server time zone", { skip: !hasDb && 
       content_type: 1,
       message: "what time is it",
     });
-    const [rows] = await pool.query<RowDataPacket[]>("SELECT created_at FROM list_messages WHERE id = ?", [res.id]);
-    assert.match(String(res.created_at), ISO_UTC);
-    assert.equal(res.created_at, rows[0]!.created_at);
-    assert.match(String(res.chat_data?.created_at), ISO_UTC);
+    const createdAt = String(res.chat_data?.created_at);
+    assert.match(createdAt, RAW_TIME);
+    assert.ok(Math.abs(parseUtc(createdAt) - Date.now()) < 10_000, `${createdAt} is now in UTC`);
   });
 });

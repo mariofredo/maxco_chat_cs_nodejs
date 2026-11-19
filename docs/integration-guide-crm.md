@@ -253,7 +253,14 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 
 ## Times
 
-Every time the server sends is UTC in ISO 8601 with `Z`, for example `"2026-11-19T06:33:39Z"`. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in socket events (including `chat_data`). It does not depend on the database server time zone.
+Times from the database are UTC, in the format `YYYY-MM-DD HH:mm:ss` without a zone: `"2026-11-19 06:33:39"` is 13:33:39 in WIB. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in the `chat_data` of socket events. It does not depend on the database server time zone.
 
-- Convert to the browser time zone before showing a time: `new Date(value)` in JavaScript, then format it with `toLocaleString()` or your date library. Never show the text as is: `06:33:39Z` is 13:33:39 in WIB.
+One exception: `new_message.created_at` of a message sent through the socket is ISO 8601 UTC with `Z` (`"2026-11-19T06:33:39.123Z"`).
+
+- Read every time as UTC and convert it to the browser time zone before showing it. Never show the text as is. One parser covers both forms:
+
+  ```js
+  const parseServerTime = (v) => new Date(v.endsWith('Z') ? v : `${v.replace(' ', 'T')}Z`);
+  ```
+
 - Parse times before comparing or sorting them.

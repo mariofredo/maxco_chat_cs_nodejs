@@ -214,8 +214,8 @@ Promotion and Sales chats keep today's behavior.
 {
   "success": true,
   "data": {
-    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17T02:24:00Z", "...": "list_messages columns" } ],
-    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17T02:21:00Z", "closed_at": "2026-11-17T02:35:00Z" } ],
+    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17 02:24:00", "...": "list_messages columns" } ],
+    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17 02:21:00", "closed_at": "2026-11-17 02:35:00" } ],
     "current":  { "chat_id": 11, "chat_ticket": "2345-6789-0123", "status": "pending" }
   },
   "pagination": { "total": 120, "page": 1, "pageSize": 50, "hasMore": true }
@@ -285,7 +285,14 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 
 ## Times
 
-Every time the server sends is UTC in ISO 8601 with `Z`, for example `"2026-11-19T06:33:39Z"`. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in socket events (including `chat_data`). It does not depend on the database server time zone.
+Times from the database are UTC, in the format `YYYY-MM-DD HH:mm:ss` without a zone: `"2026-11-19 06:33:39"` is 13:33:39 in WIB. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in the `chat_data` of socket events. It does not depend on the database server time zone.
 
-- Convert to the device time zone before showing a time: `DateTime.parse(value).toLocal()` in Flutter. Never show the text as is: `06:33:39Z` is 13:33:39 in WIB.
+One exception: `new_message.created_at` of a message sent through the socket is ISO 8601 UTC with `Z` (`"2026-11-19T06:33:39.123Z"`).
+
+- Read every time as UTC and convert it to the device time zone before showing it. Never show the text as is. One parser covers both forms:
+
+  ```dart
+  DateTime parseServerTime(String v) => DateTime.parse(v.endsWith('Z') ? v : '${v}Z').toLocal();
+  ```
+
 - Parse times before comparing or sorting them.

@@ -356,7 +356,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | Upload returns `{"success":false,"message":"File upload failed"}` with `EACCES` in the logs | `/app/uploads` is mounted with the wrong ownership (e.g. a host folder bind mount) → use the `chat_uploads` named volume, or `chown -R 1000:1000` the host folder |
 | Upload fails behind nginx (413) | `client_max_body_size` is too low (a 50 MB file reaches about 72 MB as base64) |
 | Chat is not realtime | The reverse proxy is not forwarding the `Upgrade`/`Connection` headers, or `proxy_read_timeout` is too short |
-| The app or CRM shows message times shifted by hours | API times are UTC in ISO 8601 (`2026-11-19T06:33:39Z`). The client must convert them to the device time zone instead of showing the text as is |
+| The app or CRM shows message times shifted by hours | API times are UTC, without a zone (`2026-11-19 06:33:39`). The client must read them as UTC and convert them to the device time zone instead of showing the text as is |
 | Check the running image version | `docker inspect maxco_chat_cs --format '{{.Config.Image}}'` and the `org.opencontainers.image.version` label |
 
 ---

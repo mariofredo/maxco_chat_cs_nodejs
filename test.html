@@ -782,10 +782,11 @@
   }
 
   const lastAt = (c) => String(c.last_message_time || c.created_at || '');
-  // Server times are ISO 8601 UTC ("2026-11-19T06:33:39Z"): parse them before comparing,
-  // and show them in this browser's time zone.
-  const timeOf = (s) => Date.parse(s) || 0;
-  const fmtTime = (s) => (s ? new Date(s).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '');
+  // Server times are UTC: "2026-11-19 06:33:39" from the database, ISO with Z from
+  // new_message. Parse them before comparing, and show them in this browser's time zone.
+  const parseServerTime = (s) => new Date(String(s).endsWith('Z') ? s : `${String(s).replace(' ', 'T')}Z`);
+  const timeOf = (s) => (s ? parseServerTime(s).getTime() || 0 : 0);
+  const fmtTime = (s) => (s ? parseServerTime(s).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '');
   const lastText = (c) => Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
 
   // One list row: title, category, status badge, "time · last message".

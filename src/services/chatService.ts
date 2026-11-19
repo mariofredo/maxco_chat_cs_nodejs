@@ -455,11 +455,6 @@ export async function sendMessage(input: SendMessageInput) {
     [chat_id]
   );
   const chatData = (chatRows[0] || null) as ChatDataInfo | null;
-  // The stored time, so live and loaded messages carry the same value.
-  const [messageRows] = await pool.query<RowDataPacket[]>(
-    "SELECT created_at FROM list_messages WHERE id = ?",
-    [insertId]
-  );
 
   return {
     id: insertId,
@@ -471,7 +466,7 @@ export async function sendMessage(input: SendMessageInput) {
     message: finalMessage,
     content_url: contentUrl,
     metadata: metadataValue,
-    created_at: (messageRows[0]?.created_at as string | undefined) ?? null,
+    created_at: new Date(),
     is_just_assigned: justAssigned,
     chat_data: chatData,
     // Set when the message was addressed to a closed ticket and stored in the

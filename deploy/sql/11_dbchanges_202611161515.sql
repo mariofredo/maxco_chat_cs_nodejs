@@ -22,7 +22,8 @@
 --      (e.g. an earlier run stopped between the two statements),
 --   3) adds the generated column sales_chat_key,
 --   4) adds the unique index uq_list_chats_sales_chat,
---   5) prints the resulting state (expected: 1, 1, RESTRICT, 0).
+--   5) prints the resulting state (expected: 1, 1, RESTRICT, 0; NO ACTION in
+--      place of RESTRICT behaves the same in InnoDB and is fine).
 -- ============================================================================
 
 USE `maxco_chat_im`;
@@ -109,7 +110,8 @@ SET @s := IF(@has_idx = 0,
 PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 5) Result. Expected: sales_chat_key_column = 1, unique_index = 1,
---    category_fk_on_update = RESTRICT, users_with_duplicate_sales_chats = 0.
+--    category_fk_on_update = RESTRICT (or NO ACTION, same in InnoDB),
+--    users_with_duplicate_sales_chats = 0.
 SELECT
   (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'list_chats'

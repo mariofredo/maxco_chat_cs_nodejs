@@ -37,7 +37,7 @@ export MYSQL_PWD='<password root MySQL>'
 for f in deploy/sql/*.sql; do echo "== $f"; "$MYSQL" -u root < "$f" || break; done
 ```
 
-Baris terakhir yang dicetak `11_*.sql` harus `1  1  RESTRICT  0`.
+Baris terakhir yang dicetak `11_*.sql` harus `1  1  RESTRICT  0` (`NO ACTION` di posisi `RESTRICT` sama saja, tidak masalah).
 
 Cek hasilnya:
 ```bash

@@ -129,7 +129,7 @@ DRY_RUN=1 ./run-sql.sh    # shows what would run, changes nothing
   the folder).
 - **A file that is half applied** stops the script before anything changes.
 - It stops at the first file that fails, and ends with the table count (7) and the file 11 check
-  (`1  1  RESTRICT  0`).
+  (`1  1  RESTRICT  0`; `NO ACTION` in place of `RESTRICT` means the same and is fine).
 - `YES=1` skips the question. `./run-sql.sh sql/<file>.sql ...` runs exactly the files given, in that
   order.
 - **Database user:** the files need `CREATE`, `ALTER`, `INDEX`, `REFERENCES`, `CREATE TEMPORARY TABLES`,
@@ -207,7 +207,8 @@ Important notes:
   $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/09_dbchanges_202610231200.sql
   $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/10_dbchanges_202611181400.sql
   ```
-  The last lines file 11 prints should read `1  1  RESTRICT  0`.
+  The last lines file 11 prints should read `1  1  RESTRICT  0`
+  (`NO ACTION` in place of `RESTRICT` means the same and is fine).
 - `01_schema.sql` already includes the **required seed** rows for `list_content_type` (id 1 = Text, 2 = File).
   Without them, messages fail to save (foreign key) and the CRM message list stays empty.
   `05_dbchanges_202610161456.sql` seeds chat category 3 (Inside Sales); without it the client app

@@ -21,7 +21,8 @@
 --      (mis. eksekusi sebelumnya berhenti di antara dua perintahnya),
 --   3) tambah kolom generated sales_chat_key,
 --   4) tambah unique index uq_list_chats_sales_chat,
---   5) tampilkan hasilnya (harapan: 1, 1, RESTRICT, 0).
+--   5) tampilkan hasilnya (harapan: 1, 1, RESTRICT, 0; NO ACTION di posisi
+--      RESTRICT perilakunya sama di InnoDB, tidak masalah).
 -- ============================================================================
 USE `maxco_chat_im`;
 
@@ -107,7 +108,8 @@ SET @s := IF(@has_idx = 0,
 PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 5) Result. Expected: sales_chat_key_column = 1, unique_index = 1,
---    category_fk_on_update = RESTRICT, users_with_duplicate_sales_chats = 0.
+--    category_fk_on_update = RESTRICT (or NO ACTION, same in InnoDB),
+--    users_with_duplicate_sales_chats = 0.
 SELECT
   (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'list_chats'

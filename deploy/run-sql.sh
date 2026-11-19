@@ -200,4 +200,4 @@ done
 
 echo
 echo "==> Tables in $DB_NAME: $(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$DB_NAME'") (a complete database has 7)"
-echo "    File 11 should have printed: 1  1  RESTRICT  0"
+echo "    File 11 should have printed: 1  1  RESTRICT  0   (NO ACTION in place of RESTRICT is fine)"

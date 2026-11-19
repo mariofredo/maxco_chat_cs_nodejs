@@ -16,7 +16,6 @@ deploy/
 ├── .env.example                  # configuration template -> copy to .env
 ├── install.sh                    # installer (load image + up + health wait)
 ├── check-endpoints.sh            # smoke test of a running deployment (§7)
-├── migrate-db.sh                 # runs the sql/ files on your own MySQL, only the missing ones (§5)
 ├── DEPLOYMENT.md                 # this document
 ├── DATABASE.md                   # database reference (tables, columns, import rules)
 ├── schema.sql                    # the whole database structure in one file (for reference / test databases)
@@ -51,9 +50,8 @@ If the client has their own registry, the image can be pushed and pulled instead
 # 1. In this folder:
 sha256sum -c maxco-chat-cs_1.1.1_linux-amd64.tar.sha256   # (macOS: shasum -a 256 -c ...)
 
-# 2. If the client already has MySQL, fill in .env first, then prepare the database (§5)
+# 2. If the client already has MySQL, fill in .env first
 cp .env.example .env && nano .env
-./migrate-db.sh
 
 # 3. Install (automatically docker load + compose up + health wait)
 IMAGE_TAR=maxco-chat-cs_1.1.1_linux-amd64.tar ./install.sh
@@ -106,27 +104,6 @@ docker compose logs -f app                      # Listening on 3000
 ## 5. Database
 
 **Scenario A — the client already has MySQL** (most common):
-
-```bash
-DRY_RUN=1 ./migrate-db.sh    # shows what would run, changes nothing
-./migrate-db.sh              # asks, backs up existing data, then applies
-```
-
-`migrate-db.sh` reads the connection from `.env` (`MYSQLHOST=host.docker.internal` becomes `127.0.0.1`,
-or set `DB_HOST`) and needs the `mysql` client, plus `mysqldump` for existing data, on the machine
-that runs it.
-
-- **Empty server:** runs every file in `sql/` in order.
-- **Existing database:** dumps it to `../backup-maxco_chat_im-<time>.sql` (outside `deploy/`; set
-  `BACKUP_DIR` to change), runs only the files whose change is not in the database yet, then
-  `11_dbchanges_202611161515.sql`. `07` is an empty placeholder; `11` makes its change. Running the
-  script again is safe.
-- **A file that is half applied** stops the script before anything changes.
-- `YES=1` skips the question. `AUTO_CLOSE_MINUTES=0` also switches auto-close off at the end, for
-  example until the app and CRM releases are out.
-- The run ends with the file 11 check (`1  1  RESTRICT  0`) and the table count (7).
-
-By hand, on an empty database only:
 
 ```bash
 for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f"; done

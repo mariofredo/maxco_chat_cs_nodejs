@@ -140,10 +140,11 @@ fi
 
 if [ "$EXISTING" = 1 ]; then
   command -v mysqldump >/dev/null || die "mysqldump is not installed: it is needed for the backup."
-  mkdir -p "$BACKUP_DIR"
+  # The dump holds every chat: readable by its owner only (a new folder too).
+  [ -d "$BACKUP_DIR" ] || mkdir -m 700 -p "$BACKUP_DIR"
   BACKUP="$BACKUP_DIR/backup-$DB_NAME-$(date +%Y%m%d-%H%M%S).sql"
   echo; echo "==> Backup -> $BACKUP"
-  mysqldump --defaults-extra-file="$CNF" --single-transaction --no-tablespaces "$DB_NAME" > "$BACKUP" \
+  ( umask 077; mysqldump --defaults-extra-file="$CNF" --single-transaction --no-tablespaces "$DB_NAME" > "$BACKUP" ) \
     || die "backup failed. Nothing was changed."
   grep -q "CREATE TABLE" "$BACKUP" || die "backup $BACKUP has no tables. Nothing was changed."
   echo "    $(grep -c 'CREATE TABLE' "$BACKUP") tables, $(wc -c < "$BACKUP" | tr -d ' ') bytes"

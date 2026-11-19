@@ -589,7 +589,7 @@ async function createSalesChatIfMissing(
       }
     }
   } catch (err) {
-    // The unique index on the inside sales chat (sql/dbchanges_202610191417.sql)
+    // The unique index on the inside sales chat (sql/dbchanges_202611161515.sql)
     // turns a lost race into ER_DUP_ENTRY: another request already created
     // the chat, which is exactly what this function was about to create.
     if (

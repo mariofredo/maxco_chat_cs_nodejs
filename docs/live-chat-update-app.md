@@ -3,8 +3,8 @@
 What the mobile app has to build for the new Customer Support (CS) ticket flow, the chat list, and the file upload limit.
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
-- **Backend:** image `maxco-chat-cs:1.1.0` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access).
-- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads" and "Chat list filter". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+- **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access, PR #12 UTC times).
+- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter" and "Times". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
 
 ## 1. What changes for the user
 
@@ -12,6 +12,7 @@ What the mobile app has to build for the new Customer Support (CS) ticket flow, 
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and sends an **Automated message**. It is on by default once the backend runs migration 10 (see section 8).
 - **The user can always write.** After a ticket is closed the input stays enabled. The next message opens a new ticket automatically; the app does not call anything extra.
 - **Files** are limited to 50 MB and to images, videos and PDF. The app checks this before sending and shows a clear message.
+- **Times are UTC.** Every time from the server, in REST and socket, is ISO 8601 UTC such as `2026-11-19T06:33:39Z`. The app converts it to the device time zone before showing it (section 6). This fixes times that showed hours off.
 
 ```
 ┌ Live Chat ───────────────────────────────┐
@@ -156,6 +157,8 @@ Send a file with `send_message`:
 
 All REST calls send the `X-API-Key` header, and the socket connects with `auth: { api_key }`.
 
+**Times:** every `*_at` / `*_time` field is ISO 8601 UTC (`2026-11-19T06:33:39Z`). Show it with `DateTime.parse(value).toLocal()`, never as the raw text, and parse times before comparing or sorting them.
+
 ## 7. Try it with test.html
 
 Open `test.html` (repo root) against the backend. The **App** panel plays this app and the **CRM** panel plays CS.
@@ -171,4 +174,5 @@ Open `test.html` (repo root) against the backend. The **App** panel plays this a
 
 - **Order:** release the app (and the CRM) before the backend runs migration 10, which turns auto-close on. The new behavior is harmless against the current backend.
 - **Auto-close is on by default** (`auto_close_minutes = 10`) once the backend runs migration 10. Release the app first, or ask the backend team to set it to `0` until then; no restart is needed.
+- **Times:** release the app before or together with the backend. `DateTime.parse` also reads the older format without a zone, so the new app works against the current backend too. An app that shows the raw text would show UTC, 7 hours behind WIB.
 - **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.

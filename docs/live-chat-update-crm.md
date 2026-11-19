@@ -8,9 +8,9 @@ What the CRM has to build for:
 
 **Audience:** the CRM team that builds the CS live chat menu.
 
-**Backend:** image `maxco-chat-cs:1.1.0` (PR #2 tickets and auto-close, PR #3 all-CS access, upload limit and category filter).
+**Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 all-CS access, upload limit and category filter, PR #12 UTC times).
 
-**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10 and "File uploads". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10, "File uploads" and "Times". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
 
 ## 1. What changes for CS
 
@@ -19,6 +19,7 @@ What the CRM has to build for:
 - **Closed tickets take no more CS replies.** Disable the input. The server rejects a reply with `send_message_error`.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and stores an **automated message** (`sender_type: "system"`). It is on by default once migration 10 has run; it can be switched off (section 7).
 - **Files** are limited to 50 MB, and only images, videos and PDF are accepted.
+- **Times are UTC.** Every time from the server, in REST and socket, is ISO 8601 UTC such as `2026-11-19T06:33:39Z`. Convert it to the browser time zone before showing it (section 8). This fixes times that showed hours off.
 
 ## 2. Lists
 
@@ -149,6 +150,8 @@ The closed chat moves to the Closed tab with the automated message as its last m
 | from server | `chat_room_created` | `{ id, user_id, chat_ticket, status, created_at, user_name }` |
 | from server | `send_message_error` | `{ chat_id, reason, message?, maxBytes? }` |
 
+**Times:** every `*_at` / `*_time` field is ISO 8601 UTC (`2026-11-19T06:33:39Z`). Show it with `new Date(value)` and a local format, never as the raw text, and parse times before comparing or sorting them.
+
 ## 9. Try it with test.html
 
 Open `test.html` (repo root) against the backend. The **CRM** panel plays CS and the **App** panel plays the user.
@@ -162,6 +165,6 @@ Open `test.html` (repo root) against the backend. The **CRM** panel plays CS and
 
 ## 10. Before the backend goes live
 
-- Release a CRM version that renders `sender_type: "system"` and handles `send_message_error`.
+- Release a CRM version that renders `sender_type: "system"`, handles `send_message_error` and converts the UTC times to local time. `new Date()` also reads the older format without a zone, so that CRM works against the current backend too.
 - The backend team runs migration 10 (`sql/dbchanges_202611181400.sql`) and sets nginx `client_max_body_size 72m`.
 - Migration 10 turns auto-close on (`auto_close_minutes = 10`). Run it after the app and CRM are released, or set the value to `0` right after it until then.

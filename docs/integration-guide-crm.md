@@ -250,3 +250,10 @@ A refused file is not stored. The sender receives:
 - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
 
 The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).
+
+## Times
+
+Every time the server sends is UTC in ISO 8601 with `Z`, for example `"2026-11-19T06:33:39Z"`. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in socket events (including `chat_data`). It does not depend on the database server time zone.
+
+- Convert to the browser time zone before showing a time: `new Date(value)` in JavaScript, then format it with `toLocaleString()` or your date library. Never show the text as is: `06:33:39Z` is 13:33:39 in WIB.
+- Parse times before comparing or sorting them.

@@ -5,6 +5,9 @@ Panduan dari nol: menyiapkan database, menjalankan server, lalu menguji setiap f
 ## 0. Fitur yang ada
 
 - **Chat Customer Service** (kategori 1): user membuat chat, CS membalas lewat CRM. Status `pending`, `active`, `closed`. Chat yang belum dibalas, atau balasan CS terakhir lebih tua dari batas waktu (default 120 menit), tampil di daftar **waiting**.
+- **Tiket CS**: setiap chat Customer Service adalah tiket. Tiket ditutup oleh CS, atau otomatis (auto-close) bila user tidak membalas `auto_close_minutes` menit (default 10) setelah CS membalas; server lalu menyimpan pesan otomatis (`sender_type: "system"`). Pesan user ke tiket yang sudah ditutup membuka tiket baru. Di app, semua tiket tampil sebagai satu percakapan bersambung.
+- **Semua CS** bisa membuka dan membalas semua chat; PIC (`admin_name`) hanya informasi. Nama pengirim tiap balasan ada di `sender_name`.
+- **Waktu** dari server selalu UTC, format `YYYY-MM-DD HH:mm:ss` tanpa zona (pengecualian: `created_at` di event socket `new_message` berformat ISO dengan `Z`). App dan CRM mengubahnya ke jam lokal.
 - **Chat Promotion** (kategori 2) dan **Inside Sales** (kategori 3, satu chat per user, terikat ke sales lewat `user_referrer_id`).
 - **Pesan**: teks dan file (base64), riwayat per halaman, penanda sudah dibaca, ringkasan belum dibaca untuk app mobile.
 - **Realtime** lewat Socket.IO: pesan baru, chat ditutup, admin ditugaskan, room chat baru.
@@ -75,7 +78,8 @@ Untuk mencoba status online dengan cepat, jalankan dengan grace pendek: `PRESENC
 ## 5. Tes otomatis
 
 ```bash
-npm test               # harus: tests 46, pass 46, fail 0
+npm test               # tes unit, tanpa database: harus fail 0
+npm run test:db        # tes ke database di .env.local (hanya menyentuh baris uji TEST-AWC-* / test-awc-*): harus fail 0
 npx tsc --noEmit       # harus tanpa output
 ```
 
@@ -116,6 +120,8 @@ api -X POST $BASE/api/chats/crm/messages -d "{\"chatId\":$CHAT_ID,\"updateRead\"
 api $BASE/api/client/chat/unread/user123          # { total, chats: [{ chatId, unread }] }
 ```
 Halaman 1 berisi pesan terbaru, halaman berikutnya riwayat lebih lama. `pagination.hasMore` menunjukkan masih ada halaman lagi.
+
+Waktu (`created_at`, `last_message_time`, dan lainnya) dalam UTC, apa pun zona waktu server MySQL: pesan yang dikirim jam 13:33 WIB tampil sebagai `"2026-11-19 06:33:..."`.
 
 **7.5 Daftar chat milik user, dan chat Inside Sales otomatis**
 ```bash
@@ -163,6 +169,20 @@ Buka `test.html` **satu kali** di browser. Halaman membagi dua sisi: **App (user
 6. Hasil REST dan event socket tampil di **Log kejadian**. Klik baris yang panjang untuk melihat lengkapnya, dan pakai filter Chat / Presence / Typing / REST / Error. Kolom **Lanjutan** di kanan atas berisi Referrer ID, halaman, dan jumlah per halaman.
 7. Jika pesan tidak kembali dari server dalam 3 detik, halaman menampilkan peringatan (biasanya Chat ID tidak ada di database).
 
+**Tiket CS dan auto-close.** Lanjutkan dari chat yang sudah dibalas CRM:
+
+1. **CRM:** klik **Tutup chat (REST)**. Kedua sisi menampilkan "🔒 Ticket #… is closed (ditutup CS)", dan App menampilkan "Send a message to open a new ticket.".
+2. **App:** kirim pesan. Muncul "New ticket #… opened", Chat ID pindah ke tiket baru, dan tiket baru masuk ke daftar Pending di CRM.
+3. **CRM:** isi lagi Chat ID tiket lama lalu balas: ditolak dengan "Ditolak: Tiket sudah ditutup".
+4. **App:** klik **Thread tiket**: semua tiket tampil sebagai satu percakapan dengan pembatas tiket, dan jamnya jam lokal browser. **CRM:** **Muat riwayat tiket** (kategori Customer Support): satu baris per tiket, dengan PIC.
+5. **Auto-close:** perpendek waktunya dulu:
+
+   ```sql
+   UPDATE list_chat_config SET config_value = '1' WHERE config_key = 'auto_close_minutes';
+   ```
+
+   CRM membalas, lalu App diam. Dalam 1 sampai 2 menit kedua sisi menerima pesan otomatis ("Hi …, since we haven't received a reply…") dan "🔒 Ticket #… is closed". Kembalikan nilainya sesudah itu (`10`, atau `0` untuk mematikan auto-close di development).
+
 ## 9. Uji status online (presence)
 
 Server sebaiknya dijalankan dengan `PRESENCE_GRACE_SECONDS=3`. App dan CRM sudah terhubung. Bagian **3. Status online** ada di tiap sisi.
@@ -182,6 +202,7 @@ Server sebaiknya dijalankan dengan `PRESENCE_GRACE_SECONDS=3`. App dan CRM sudah
 3. Ulangi dari CRM: header App ("Maxco Customer Support") menampilkan "CS Ani sedang mengetik…" dengan titik-titik yang sama.
 4. Log menampilkan event `typing` (`isTyping:true`, lalu `false`). Sisi yang mengetik tidak menerima event typing miliknya sendiri.
 5. Kalau salah satu sisi belum **Masuk room**, typing tidak dikirim.
+6. **Dua CS di satu chat:** buka `test.html` di tab kedua, beri Admin ID dan nama CRM yang berbeda (misalnya `admin2`, "CS Budi"), Connect, lalu **Masuk room** untuk Chat ID yang sama. Mengetik di CRM tab kedua: CRM tab pertama menampilkan "CS Budi sedang mengetik…", dan App menampilkan nama itu juga. Semua CS bisa membalas; tiap gelembung menampilkan nama pengirimnya.
 
 Server tidak menyimpan status typing dan tidak punya timer. Halaman ini meniru client yang benar: mengirim ulang `isTyping:true` tiap sekitar 3 detik selama mengetik, dan menyembunyikan indikator setelah 5 detik tanpa pembaruan.
 
@@ -208,4 +229,5 @@ Kirim pesan sebagai admin ke chat milik `user123` (bagian 8, langkah 3). Log ser
 - **Pesan terkirim tapi tidak muncul sebagai pesan terakhir di CRM:** pesan harus punya `content_type` 1 (teks) atau 2 (file); `test.html` sudah mengirim 1.
 - **Lencana status tidak berubah:** untuk status tim, sisi App harus terhubung dan saklar **Pantau status CS dan Sales** menyala (otomatis saat connect). Untuk status user, sisi CRM harus mencentang **Saya sedang di menu live chat** (itu yang membuat CRM menerima status user).
 - **Port 3000 terpakai:** jalankan dengan `PORT=3100 npm run dev:tsx` dan samakan Server URL.
+- **Jam pesan di respons REST selisih 7 jam dari WIB:** memang begitu, server mengirim UTC. `test.html` sudah mengubahnya ke jam lokal; app dan CRM juga harus mengubahnya, bukan menampilkan teksnya apa adanya.
 - **Status online bertahan agak lama setelah jaringan putus mendadak:** Socket.IO baru mendeteksi koneksi mati setelah sekitar 45 detik (ping), ditambah grace.

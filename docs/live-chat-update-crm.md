@@ -10,12 +10,13 @@ What the CRM has to build for:
 
 **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 all-CS access, upload limit and category filter, PR #12 UTC times).
 
-**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10, "File uploads" and "Times". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10, "File uploads" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 5 now shows colleague typing.
 
 ## 1. What changes for CS
 
 - **CS works per ticket.** Every CS chat (`category_id = 1`) is a ticket with a number (`chat_ticket`). When a user writes again after a ticket is closed, the server opens a **new ticket**, which arrives in **Waiting** like any new chat. The user sees all tickets as one continuous conversation; CS keeps seeing them one by one.
 - **The PIC is information only.** Every CS can see, open and reply to every chat, including chats handled by another CS. The Assigned list shows every handled chat, with its PIC.
+- **Colleague typing.** CS in the same chat receive each other's `typing` (`senderType: "admin"`). Show it, for example "Budi (CS) is typing…", so two CS do not answer the same question, and always send `senderName` (`docs/integration-guide-crm.md` section 5).
 - **Closed tickets take no more CS replies.** Disable the input. The server rejects a reply with `send_message_error`.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and stores an **automated message** (`sender_type: "system"`). It is on by default once migration 10 has run; it can be switched off (section 7).
 - **Files** are limited to 50 MB, and only images, videos and PDF are accepted.

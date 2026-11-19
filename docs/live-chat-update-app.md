@@ -4,12 +4,13 @@ What the mobile app has to build for the new Customer Support (CS) ticket flow, 
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
 - **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access, PR #12 UTC times).
-- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter" and "Times". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 4 now shows typing from several CS.
 
 ## 1. What changes for the user
 
 - **Chats with Customer Support are one continuous conversation.** On the server, each CS chat is a ticket with a number (`chat_ticket`), and a ticket can be closed. The user never sees a list of tickets. The user sees one conversation, with "Ticket #… is closed" and "New ticket #… opened" lines inside it.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and sends an **Automated message**. It is on by default once the backend runs migration 10 (see section 8).
+- **Several CS can answer one ticket.** Show the name of each CS reply from its own `sender_name`, not from the chat's PIC (`chat_data.admin_name`). Keep the typing indicator per CS: "Andi is typing…", "Andi and Budi are typing…" (`docs/integration-guide-app.md` section 4).
 - **The user can always write.** After a ticket is closed the input stays enabled. The next message opens a new ticket automatically; the app does not call anything extra.
 - **Files** are limited to 50 MB and to images, videos and PDF. The app checks this before sending and shows a clear message.
 - **Times are UTC.** Times keep their format (`2026-11-19 06:33:39`), but the value is now UTC whatever the database server's zone. The app converts it to the device time zone before showing it (section 6). This fixes times that showed hours off.

@@ -92,21 +92,35 @@ idleTimer = Timer(Duration(seconds: 2), sendTypingStop);  // isTyping: false aft
 // also call sendTypingStop() right after the message is sent
 ```
 
-Receive the agent's typing:
+Receive the agents' typing. Every CS can answer the same chat, so keep one entry per CS (`senderId`):
 
 ```dart
+final typingAgents = <String, String>{};   // senderId -> name
+final typingTimers = <String, Timer>{};
+
+void setAgentTyping(String id, String? name, bool typing) {
+  typingTimers.remove(id)?.cancel();
+  if (typing) {
+    typingAgents[id] = name ?? 'Customer Support';
+    typingTimers[id] = Timer(Duration(seconds: 5), () => setAgentTyping(id, null, false));
+  } else {
+    typingAgents.remove(id);
+  }
+  showTyping(typingAgents.values.toList()); // [] hides; ["Andi"] → "Andi is typing…"; ["Andi", "Budi"] → "Andi and Budi are typing…"
+}
+
 socket.on('typing', (data) {
   // data: { chatId, isTyping, senderId, senderType, senderName|null }
   if (data['senderType'] != 'admin') return;
-  showTyping(data['isTyping'] == true, name: data['senderName']);
-  hideTimer?.cancel();
-  if (data['isTyping'] == true) {
-    hideTimer = Timer(Duration(seconds: 5), () => showTyping(false));
-  }
+  setAgentTyping(data['senderId'], data['senderName'], data['isTyping'] == true);
 });
+
+// When a CS message arrives (new_message), clear only that CS:
+// setAgentTyping('${msg['sender_id']}', null, false);
 ```
 
-- The server does **not** keep typing state and has no timer. **You** must hide the indicator when `isTyping` is `false`, when a message from the agent arrives, or after **5 seconds without a new `isTyping: true`**. Otherwise a dropped socket leaves "typing" on screen forever.
+- The server does **not** keep typing state and has no timer. **You** must hide a CS's indicator when that CS sends `isTyping: false`, when a message from that CS arrives, or after **5 seconds without a new `isTyping: true`** from that CS. Otherwise a dropped socket leaves "typing" on screen forever.
+- One CS stopping must not hide another CS who is still typing. `senderName` is `null` when the CRM does not send it; show "Customer Support" then.
 - You never receive your own `typing` event back.
 - If the socket has not joined that chat's room, the event is silently ignored.
 
@@ -157,6 +171,7 @@ Use `test.html`: the page plays the CRM side for you.
 6. Type in the app: the CRM header shows "... sedang mengetik…". Stop for 2 seconds, or send: it disappears.
 7. Type in the CRM page: the app shows the indicator, and it disappears after the CRM stops (or after 5 seconds).
 8. Turn Wi-Fi off and on during the Live Chat flow: after reconnect, the status and the user's online state are restored without reopening the screen.
+9. Two CS: open `test.html` in two tabs with different CRM names and join both to the chat. Type in both: the app shows both names, and one CS stopping does not hide the other.
 
 ## 9. Tickets (Customer Support)
 

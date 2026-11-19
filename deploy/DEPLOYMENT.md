@@ -16,6 +16,7 @@ deploy/
 ├── .env.example                  # configuration template -> copy to .env
 ├── install.sh                    # installer (load image + up + health wait)
 ├── check-endpoints.sh            # smoke test of a running deployment (§7)
+├── run-sql.sh                    # runs the sql/ files on your own MySQL, only docker needed (§5)
 ├── DEPLOYMENT.md                 # this document
 ├── DATABASE.md                   # database reference (tables, columns, import rules)
 ├── schema.sql                    # the whole database structure in one file (for reference / test databases)
@@ -50,8 +51,9 @@ If the client has their own registry, the image can be pushed and pulled instead
 # 1. In this folder:
 sha256sum -c maxco-chat-cs_1.1.1_linux-amd64.tar.sha256   # (macOS: shasum -a 256 -c ...)
 
-# 2. If the client already has MySQL, fill in .env first
+# 2. If the client already has MySQL, fill in .env first, then run the sql/ files (§5)
 cp .env.example .env && nano .env
+./run-sql.sh
 
 # 3. Install (automatically docker load + compose up + health wait)
 IMAGE_TAR=maxco-chat-cs_1.1.1_linux-amd64.tar ./install.sh
@@ -103,7 +105,51 @@ docker compose logs -f app                      # Listening on 3000
 
 ## 5. Database
 
-**Scenario A — the client already has MySQL** (most common):
+**Scenario A — the client already has MySQL** (most common). Fill in `.env` first, then from this folder:
+
+```bash
+DRY_RUN=1 ./run-sql.sh    # shows what would run, changes nothing
+./run-sql.sh              # asks, then runs
+```
+
+`run-sql.sh` needs only Docker:
+
+- It runs the files with the `mysql` client of a temporary `mysql:8.0` container. The image is pulled
+  once (without internet: `docker load` a saved `mysql:8.0`), and the container is removed at the end.
+- It connects with `MYSQLHOST`, `MYSQLPORT`, `MYSQLUSER` and `MYSQLPASSWORD` from `.env`, the same way
+  the app container does. MySQL must therefore accept connections from the Docker network
+  (`bind-address`, and the user allowed from `'%'`), which the app needs anyway.
+- **New, empty database:** runs every file in `sql/` in name order.
+- **Database that already has data** (an upgrade, or one that stopped halfway): checks which file
+  changes are already there, and runs only the missing files, then `11_dbchanges_202611161515.sql`
+  (safe to repeat). `07` is an empty placeholder and is skipped. Running the script again is safe.
+- **No backup by default.** `11` merges duplicate inside sales chats (it deletes the extra chats after
+  moving their messages), so back the database up first: your own backup, or `NO_BACKUP=0 ./run-sql.sh`,
+  which dumps it to `../backup-maxco_chat_im-<time>.sql` before anything changes (`BACKUP_DIR` changes
+  the folder).
+- **A file that is half applied** stops the script before anything changes.
+- It stops at the first file that fails, and ends with the table count (7) and the file 11 check
+  (`1  1  RESTRICT  0`).
+- `YES=1` skips the question. `./run-sql.sh sql/<file>.sql ...` runs exactly the files given, in that
+  order.
+- **Database user:** the files need `CREATE`, `ALTER`, `INDEX`, `REFERENCES`, `CREATE TEMPORARY TABLES`,
+  `SELECT`, `INSERT`, `UPDATE` and `DELETE` on the database. If the app's user has less, run the script
+  once with an admin user: `MYSQLUSER=<admin> MYSQLPASSWORD=<password> ./run-sql.sh` (variables set in
+  the shell win over `.env`). Otherwise it stops partway, after some files have already run.
+- **With `sudo`**, write the variables **after** `sudo`: `sudo NO_BACKUP=0 ./run-sql.sh`. Written
+  before `sudo` (`NO_BACKUP=0 sudo ./run-sql.sh`), they are dropped.
+
+**Upgrade** (the database already has data): stop the app while the script runs. `11` merges duplicate
+inside sales chats and rebuilds `list_chats` (writes to it wait until it is done); a running app could
+create a new duplicate or wait on that lock.
+
+```bash
+docker compose stop app
+NO_BACKUP=0 ./run-sql.sh     # or take your own backup first and run ./run-sql.sh
+docker compose start app
+```
+
+With a `mysql` client on the machine, the same by hand (empty database):
 
 ```bash
 for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f" || break; done
@@ -166,9 +212,9 @@ Important notes:
   Without them, messages fail to save (foreign key) and the CRM message list stays empty.
   `05_dbchanges_202610161456.sql` seeds chat category 3 (Inside Sales); without it the client app
   cannot create the inside sales chat (`POST /api/chats/user` fails on the foreign key).
-- 6 tables must exist after §5: `list_chats`, `list_messages`, `list_content_type`,
-  `list_chat_category`, `list_chat_admin_history`, `list_user_devices` (the last one only
-  matters for push notifications, see §13). Quick check:
+- 7 tables must exist after §5: `list_chats`, `list_messages`, `list_content_type`,
+  `list_chat_category`, `list_chat_admin_history`, `list_chat_config` (waiting and auto-close
+  settings) and `list_user_devices` (only matters for push notifications, see §13). Quick check:
   `mysql -h ... -e "SHOW TABLES FROM maxco_chat_im;"`
 - Timezone: the app reads and writes every time in UTC (it sets each database connection to `+00:00`), whatever the MySQL server time zone is. `TZ` in `.env` only sets the clock of the container logs.
 
@@ -340,6 +386,8 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 - **Database** is backed up separately by the client (e.g. `mysqldump maxco_chat_im`); the application stores nothing else.
 - **Upgrade**: `docker load -i maxco-chat-cs_1.1.1_linux-amd64.tar`, update `APP_IMAGE` in `.env`,
   then `docker compose up -d`. A few seconds of downtime; `restart: unless-stopped` brings the container back up.
+  When the new package has new `sql/` files and the client runs their own MySQL, run them first with
+  the app stopped (§5, **Upgrade**).
 - **Rollback**: set `APP_IMAGE` back to the previous tag (the old image stays on the server) then `docker compose up -d`.
 - **Logs**: stdout only (json-file driver, rotation 10 MB × 3 files). `docker compose logs -f app`.
 

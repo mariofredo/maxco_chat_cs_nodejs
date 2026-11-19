@@ -3,15 +3,17 @@
 What the mobile app has to build for the new Customer Support (CS) ticket flow, the chat list, and the file upload limit.
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
-- **Backend:** image `maxco-chat-cs:1.1.0` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access).
-- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads" and "Chat list filter". Connection, presence and typing are unchanged and are covered in sections 1–8 of that guide.
+- **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access, PR #12 UTC times).
+- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 4 now shows typing from several CS.
 
 ## 1. What changes for the user
 
 - **Chats with Customer Support are one continuous conversation.** On the server, each CS chat is a ticket with a number (`chat_ticket`), and a ticket can be closed. The user never sees a list of tickets. The user sees one conversation, with "Ticket #… is closed" and "New ticket #… opened" lines inside it.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and sends an **Automated message**. It is on by default once the backend runs migration 10 (see section 8).
+- **Several CS can answer one ticket.** Show the name of each CS reply from its own `sender_name`, not from the chat's PIC (`chat_data.admin_name`). Keep the typing indicator per CS: "Andi is typing…", "Andi and Budi are typing…" (`docs/integration-guide-app.md` section 4).
 - **The user can always write.** After a ticket is closed the input stays enabled. The next message opens a new ticket automatically; the app does not call anything extra.
 - **Files** are limited to 50 MB and to images, videos and PDF. The app checks this before sending and shows a clear message.
+- **Times are UTC.** Times keep their format (`2026-11-19 06:33:39`), but the value is now UTC whatever the database server's zone. The app converts it to the device time zone before showing it (section 6). This fixes times that showed hours off.
 
 ```
 ┌ Live Chat ───────────────────────────────┐
@@ -156,6 +158,8 @@ Send a file with `send_message`:
 
 All REST calls send the `X-API-Key` header, and the socket connects with `auth: { api_key }`.
 
+**Times:** every `*_at` / `*_time` field is UTC as `YYYY-MM-DD HH:mm:ss`, without a zone. `new_message.created_at` is ISO UTC with `Z`. Read both with `DateTime.parse(v.endsWith('Z') ? v : '${v}Z').toLocal()`, never show the raw text, and parse times before comparing or sorting them.
+
 ## 7. Try it with test.html
 
 Open `test.html` (repo root) against the backend. The **App** panel plays this app and the **CRM** panel plays CS.
@@ -171,4 +175,5 @@ Open `test.html` (repo root) against the backend. The **App** panel plays this a
 
 - **Order:** release the app (and the CRM) before the backend runs migration 10, which turns auto-close on. The new behavior is harmless against the current backend.
 - **Auto-close is on by default** (`auto_close_minutes = 10`) once the backend runs migration 10. Release the app first, or ask the backend team to set it to `0` until then; no restart is needed.
+- **Times:** release the app together with the backend. Before it, times were the database server's local time in the same format, so an app that reads them as UTC shows them shifted against the old backend, and an app that shows the raw text shows UTC (7 hours behind WIB) against the new one.
 - **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.

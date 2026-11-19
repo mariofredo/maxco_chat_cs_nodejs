@@ -761,7 +761,7 @@
       if (t.closed_at) items.push({ at: t.closed_at, chat: t.chat_id, order: 2, draw: () => addDivider('app', `🔒 Ticket #${t.chat_ticket} is closed`, 'closed') });
     }
     for (const m of messages) items.push({ at: m.created_at, chat: Number(m.chat_id), order: 1, draw: () => bubbleFromMessage('app', m) });
-    items.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : a.chat - b.chat || a.order - b.order));
+    items.sort((a, b) => timeOf(a.at) - timeOf(b.at) || a.chat - b.chat || a.order - b.order);
     $('chatbox-app').replaceChildren();
     items.forEach((it) => it.draw());
     if (!current) { addDivider('app', 'Belum pernah chat dengan CS. "Buat chat" untuk memulai.', 'hint'); return; }
@@ -782,6 +782,11 @@
   }
 
   const lastAt = (c) => String(c.last_message_time || c.created_at || '');
+  // Server times are UTC: "2026-11-19 06:33:39" from the database, ISO with Z from
+  // new_message. Parse them before comparing, and show them in this browser's time zone.
+  const parseServerTime = (s) => new Date(String(s).endsWith('Z') ? s : `${String(s).replace(' ', 'T')}Z`);
+  const timeOf = (s) => (s ? parseServerTime(s).getTime() || 0 : 0);
+  const fmtTime = (s) => (s ? parseServerTime(s).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '');
   const lastText = (c) => Number(c.last_message_content_type) === 2 ? '📎 file' : (c.last_message || '(belum ada pesan)');
 
   // One list row: title, category, status badge, "time · last message".
@@ -814,10 +819,10 @@
     const rows = [];
     if (tickets.length) {
       const latest = tickets.reduce((a, b) => (Number(b.id) > Number(a.id) ? b : a));
-      const lastMsg = tickets.reduce((a, b) => (lastAt(b) > lastAt(a) ? b : a));
+      const lastMsg = tickets.reduce((a, b) => (timeOf(lastAt(b)) > timeOf(lastAt(a)) ? b : a));
       rows.push(listRow({
         key: 'cs', title: 'Customer Support', category: `${tickets.length} tiket · aktif #${latest.id}`,
-        status: latest.status, last: `${lastAt(lastMsg).slice(0, 16)} · ${lastText(lastMsg)}`,
+        status: latest.status, last: `${fmtTime(lastAt(lastMsg))} · ${lastText(lastMsg)}`,
         current: tickets.some((c) => String(c.id) === chatId()),
         onClick: () => { markCurrent('ticketList', 'cs'); openSupportConversation(); },
       }));
@@ -825,7 +830,7 @@
     for (const c of others) {
       rows.push(listRow({
         key: String(c.id), title: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`, category: `#${c.id}`,
-        status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}`, current: String(c.id) === chatId(),
+        status: c.status, last: `${fmtTime(lastAt(c))} · ${lastText(c)}`, current: String(c.id) === chatId(),
         onClick: () => { markCurrent('ticketList', String(c.id)); openChat('app', c); },
       }));
     }
@@ -849,7 +854,7 @@
     if (!res) { $('crmTicketList').replaceChildren(); $('crmTicketListInfo').textContent = 'Gagal memuat daftar; lihat log.'; return; }
     $('crmTicketList').replaceChildren(...res.rows.map((c) => listRow({
       key: String(c.id), title: `#${c.id} · ${c.chat_ticket || '-'}`, category: CATEGORY_NAME[c.category_id] || `Kategori ${c.category_id}`,
-      status: c.status, last: `${lastAt(c).slice(0, 16)} · ${lastText(c)}${c.admin_name ? ` · PIC ${c.admin_name}` : ''}`,
+      status: c.status, last: `${fmtTime(lastAt(c))} · ${lastText(c)}${c.admin_name ? ` · PIC ${c.admin_name}` : ''}`,
       current: String(c.id) === chatId(),
       onClick: () => { markCurrent('crmTicketList', String(c.id)); openChat('crm', c); },
     })));

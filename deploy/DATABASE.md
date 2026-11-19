@@ -282,10 +282,10 @@ by the app, so the database accepts rows that break them and the app then behave
     messages with `read_at` NULL, so set `read_at` (for example to the message's `created_at`) on
     old messages that should not show as unread.
 12. **Time zone.** The time columns are `timestamp`: the database stores them in UTC and converts
-    them from and to the time zone of each connection (`@@session.time_zone`). The app connects
-    with the server default, so it reads and writes the database server's local time (the bundled
-    `docker-compose.with-db.yml` runs it with `TZ=Asia/Jakarta`). Either leave the import
-    connection at the server default and give server-local times, or run
+    them from and to the time zone of each connection (`@@session.time_zone`). The app sets its
+    own connections to UTC (`+00:00`), so the server time zone does not change what it reads or
+    writes. An import connection uses the server default unless told otherwise: either leave it at
+    the server default and give server-local times, or run
     `SET time_zone = '+00:00';` first and give UTC times (dumps made by mysqldump or HeidiSQL do
     this themselves). Check from the import connection with
     `SELECT @@session.time_zone, @@global.time_zone, @@system_time_zone, NOW();`. Times in the wrong

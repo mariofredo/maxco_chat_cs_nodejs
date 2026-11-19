@@ -92,21 +92,35 @@ idleTimer = Timer(Duration(seconds: 2), sendTypingStop);  // isTyping: false aft
 // also call sendTypingStop() right after the message is sent
 ```
 
-Receive the agent's typing:
+Receive the agents' typing. Every CS can answer the same chat, so keep one entry per CS (`senderId`):
 
 ```dart
+final typingAgents = <String, String>{};   // senderId -> name
+final typingTimers = <String, Timer>{};
+
+void setAgentTyping(String id, String? name, bool typing) {
+  typingTimers.remove(id)?.cancel();
+  if (typing) {
+    typingAgents[id] = name ?? 'Customer Support';
+    typingTimers[id] = Timer(Duration(seconds: 5), () => setAgentTyping(id, null, false));
+  } else {
+    typingAgents.remove(id);
+  }
+  showTyping(typingAgents.values.toList()); // [] hides; ["Andi"] → "Andi is typing…"; ["Andi", "Budi"] → "Andi and Budi are typing…"
+}
+
 socket.on('typing', (data) {
   // data: { chatId, isTyping, senderId, senderType, senderName|null }
   if (data['senderType'] != 'admin') return;
-  showTyping(data['isTyping'] == true, name: data['senderName']);
-  hideTimer?.cancel();
-  if (data['isTyping'] == true) {
-    hideTimer = Timer(Duration(seconds: 5), () => showTyping(false));
-  }
+  setAgentTyping(data['senderId'], data['senderName'], data['isTyping'] == true);
 });
+
+// When a CS message arrives (new_message), clear only that CS:
+// setAgentTyping('${msg['sender_id']}', null, false);
 ```
 
-- The server does **not** keep typing state and has no timer. **You** must hide the indicator when `isTyping` is `false`, when a message from the agent arrives, or after **5 seconds without a new `isTyping: true`**. Otherwise a dropped socket leaves "typing" on screen forever.
+- The server does **not** keep typing state and has no timer. **You** must hide a CS's indicator when that CS sends `isTyping: false`, when a message from that CS arrives, or after **5 seconds without a new `isTyping: true`** from that CS. Otherwise a dropped socket leaves "typing" on screen forever.
+- One CS stopping must not hide another CS who is still typing. `senderName` is `null` when the CRM does not send it; show "Customer Support" then.
 - You never receive your own `typing` event back.
 - If the socket has not joined that chat's room, the event is silently ignored.
 
@@ -157,6 +171,7 @@ Use `test.html`: the page plays the CRM side for you.
 6. Type in the app: the CRM header shows "... sedang mengetik…". Stop for 2 seconds, or send: it disappears.
 7. Type in the CRM page: the app shows the indicator, and it disappears after the CRM stops (or after 5 seconds).
 8. Turn Wi-Fi off and on during the Live Chat flow: after reconnect, the status and the user's online state are restored without reopening the screen.
+9. Two CS: open `test.html` in two tabs with different CRM names and join both to the chat. Type in both: the app shows both names, and one CS stopping does not hide the other.
 
 ## 9. Tickets (Customer Support)
 
@@ -214,8 +229,8 @@ Promotion and Sales chats keep today's behavior.
 {
   "success": true,
   "data": {
-    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17 09:24:00", "...": "list_messages columns" } ],
-    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17 09:21:00", "closed_at": "2026-11-17 09:35:00" } ],
+    "messages": [ { "id": 1, "chat_id": 10, "sender_type": "user", "message": "...", "created_at": "2026-11-17 02:24:00", "...": "list_messages columns" } ],
+    "tickets":  [ { "chat_id": 10, "chat_ticket": "1234-5678-9012", "status": "closed", "created_at": "2026-11-17 02:21:00", "closed_at": "2026-11-17 02:35:00" } ],
     "current":  { "chat_id": 11, "chat_ticket": "2345-6789-0123", "status": "pending" }
   },
   "pagination": { "total": 120, "page": 1, "pageSize": 50, "hasMore": true }
@@ -282,3 +297,17 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 - No value, an empty value or an invalid value means every category, the same as before.
 - `pagination.total` counts only the filtered chats. Paging (`page`, `pageSize`) works as before.
 - Example: the user's ticket history is `GET /api/chats/user/<userId>?categoryIds=1&page=1&pageSize=20`. Each row is one ticket (`chat_ticket`, `status`, `created_at`, `closed_at`, last message).
+
+## Times
+
+Times from the database are UTC, in the format `YYYY-MM-DD HH:mm:ss` without a zone: `"2026-11-19 06:33:39"` is 13:33:39 in WIB. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in the `chat_data` of socket events. It does not depend on the database server time zone.
+
+One exception: `new_message.created_at` of a message sent through the socket is ISO 8601 UTC with `Z` (`"2026-11-19T06:33:39.123Z"`).
+
+- Read every time as UTC and convert it to the device time zone before showing it. Never show the text as is. One parser covers both forms:
+
+  ```dart
+  DateTime parseServerTime(String v) => DateTime.parse(v.endsWith('Z') ? v : '${v}Z').toLocal();
+  ```
+
+- Parse times before comparing or sorting them.

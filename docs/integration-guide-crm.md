@@ -113,7 +113,7 @@ if (now - lastTypingSent > 3000) {            // first keystroke, then at most e
     'isTyping': true,
     'senderId': adminId,                      // String
     'senderType': 'admin',
-    'senderName': adminName,                  // optional, shown to the user
+    'senderName': adminName,                  // shown to the user and to the other CS
   });
   lastTypingSent = now;
 }
@@ -122,21 +122,30 @@ idleTimer = Timer(Duration(seconds: 2), sendTypingStop);   // isTyping: false af
 // also call sendTypingStop() right after the message is sent
 ```
 
-Receive the user's typing:
+Receive the typing of the user **and of the other CS** in the same chat. Every CS can answer every chat, so showing a colleague's typing keeps two CS from answering the same question:
 
 ```dart
+final hideTimers = <String, Timer>{};   // key: chatId|senderId
+
 socket.on('typing', (data) {
   // data: { chatId, isTyping, senderId, senderType, senderName|null }
-  if (data['senderType'] != 'user') return;
-  showTyping(chatId: data['chatId'], typing: data['isTyping'] == true);
-  hideTimer?.cancel();
+  final chatId = data['chatId'];
+  final senderId = data['senderId'];
+  final key = '$chatId|$senderId';
+  void show(bool typing) => data['senderType'] == 'user'
+      ? showUserTyping(chatId: chatId, typing: typing)
+      : showColleagueTyping(chatId: chatId, csId: senderId, name: data['senderName'], typing: typing); // "Budi (CS) is typing…"
+  hideTimers.remove(key)?.cancel();
+  show(data['isTyping'] == true);
   if (data['isTyping'] == true) {
-    hideTimer = Timer(Duration(seconds: 5), () => showTyping(chatId: data['chatId'], typing: false));
+    hideTimers[key] = Timer(Duration(seconds: 5), () => show(false));
   }
 });
 ```
 
-- The server keeps no typing state and has no timer. **You** must hide the indicator on `isTyping: false`, when a message from the user arrives, or after **5 seconds without a new `isTyping: true`**.
+- The server keeps no typing state and has no timer. **You** must hide an indicator on `isTyping: false` from that sender, when a message from that sender arrives, or after **5 seconds without a new `isTyping: true`** from that sender.
+- Several CS can type in the same chat at once: keep one indicator per `senderId`.
+- Always send `senderName` with the CS display name. Without it the user and the other CS receive `null`.
 - You never receive your own `typing` event. If the socket has not joined that chat's room, the event is ignored silently.
 
 ## 6. Rules and pitfalls
@@ -171,6 +180,7 @@ Use `test.html`: the **App (user)** side plays the mobile app for you.
 6. On the App side of `test.html`, switch **Saya sedang di layar Live Chat** on and off: your chat list shows that user going Online and Offline, and the initial REST status matches.
 7. Type in the App side: your conversation header shows "... sedang mengetik…" and the indicator disappears when the user stops, sends, or after 5 seconds.
 8. Type in your conversation: the App side shows the indicator and clears it the same way.
+9. Two CS: open the same chat as two CS (two browsers). Type in one: the other shows "<name> (CS) is typing…", and the App side shows that name.
 
 ## 9. Tickets (Customer Support)
 
@@ -250,3 +260,17 @@ A refused file is not stored. The sender receives:
 - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
 
 The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).
+
+## Times
+
+Times from the database are UTC, in the format `YYYY-MM-DD HH:mm:ss` without a zone: `"2026-11-19 06:33:39"` is 13:33:39 in WIB. This covers `created_at`, `closed_at`, `last_message_time` and every other `*_at` / `*_time` field, in REST responses and in the `chat_data` of socket events. It does not depend on the database server time zone.
+
+One exception: `new_message.created_at` of a message sent through the socket is ISO 8601 UTC with `Z` (`"2026-11-19T06:33:39.123Z"`).
+
+- Read every time as UTC and convert it to the browser time zone before showing it. Never show the text as is. One parser covers both forms:
+
+  ```js
+  const parseServerTime = (v) => new Date(v.endsWith('Z') ? v : `${v.replace(' ', 'T')}Z`);
+  ```
+
+- Parse times before comparing or sorting them.

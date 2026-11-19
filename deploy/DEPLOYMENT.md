@@ -164,7 +164,7 @@ Important notes:
   `list_chat_category`, `list_chat_admin_history`, `list_user_devices` (the last one only
   matters for push notifications, see §13). Quick check:
   `mysql -h ... -e "SHOW TABLES FROM maxco_chat_im;"`
-- Timezone: `TZ` in `.env` should match the MySQL server timezone so chat timestamps stay consistent.
+- Timezone: the app reads and writes every time in UTC (it sets each database connection to `+00:00`), whatever the MySQL server time zone is. `TZ` in `.env` only sets the clock of the container logs.
 
 ---
 
@@ -181,7 +181,7 @@ Important notes:
 | `APP_PORT` | no | `3000` | Port exposed on the server (used by the CRM) |
 | `APP_IMAGE` | no | `maxco-chat-cs:1.1.0` | Image tag used by compose |
 | `CHAT_API_KEY` | recommended | `openssl rand -hex 32` | Protects REST + Socket.IO with a static API key (§6 note below). Empty = open mode (development) |
-| `TZ` | no | `Asia/Jakarta` | Container timezone |
+| `TZ` | no | `Asia/Jakarta` | Container timezone, for log times only. API times are always UTC |
 | `PRESENCE_GRACE_SECONDS` | no | `10` | Seconds before a disconnected CRM/app socket is shown offline (online status of CS and users). `0` = no waiting |
 | `FCM_PUSH_ENABLED` | no | `true` | Enables push notifications to the mobile app (see §13). Off by default |
 | `FIREBASE_SERVICE_ACCOUNT_JSON_BASE64` | for push | — | Base64 of the Firebase service account JSON (option 1, see §13) |
@@ -356,7 +356,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | Upload returns `{"success":false,"message":"File upload failed"}` with `EACCES` in the logs | `/app/uploads` is mounted with the wrong ownership (e.g. a host folder bind mount) → use the `chat_uploads` named volume, or `chown -R 1000:1000` the host folder |
 | Upload fails behind nginx (413) | `client_max_body_size` is too low (a 50 MB file reaches about 72 MB as base64) |
 | Chat is not realtime | The reverse proxy is not forwarding the `Upgrade`/`Connection` headers, or `proxy_read_timeout` is too short |
-| Message timestamps are off | Container `TZ` differs from the MySQL timezone; align both |
+| The app or CRM shows message times shifted by hours | API times are UTC, without a zone (`2026-11-19 06:33:39`). The client must read them as UTC and convert them to the device time zone instead of showing the text as is |
 | Check the running image version | `docker inspect maxco_chat_cs --format '{{.Config.Image}}'` and the `org.opencontainers.image.version` label |
 
 ---

@@ -8,7 +8,7 @@ services:
   app:
     # IMPORTANT: keep APP_IMAGE in .env in sync with the version you loaded.
     # If it points to an old tag, compose will happily run the OLD image.
-    image: ${APP_IMAGE:-maxco-chat-cs:1.0.0}
+    image: ${APP_IMAGE:-maxco-chat-cs:1.1.1}
     container_name: maxco_chat_cs
     restart: unless-stopped
 

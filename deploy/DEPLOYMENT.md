@@ -106,8 +106,9 @@ docker compose logs -f app                      # Listening on 3000
 **Scenario A — the client already has MySQL** (most common):
 
 ```bash
-for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f"; done
+for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f" || break; done
 # the order comes from the file names: 01_schema, 02_migrations, 03..11_dbchanges
+# `|| break` stops at the first file that fails, so the next ones never run on half-built tables
 ```
 
 **Scenario B — MySQL runs from this compose file**: use `install.sh --with-db` or
@@ -118,8 +119,11 @@ Table and column reference (for data migrations or reporting): [`DATABASE.md`](D
 
 Important notes:
 
-- `01_schema.sql` contains `CREATE DATABASE` + `USE`, and the database name inside it (`maxco_chat_im`)
-  **must match** `MYSQLDATABASE` in `.env`. If the client uses a different name, change it in both places.
+- `01_schema.sql` contains `CREATE DATABASE` + `USE`, and every other file in `sql/` (except the empty
+  `07`) starts with ``USE `maxco_chat_im`;``. That name **must match** `MYSQLDATABASE` in `.env`. If the
+  client uses a different name, change it in `.env` **and in every `sql/` file** before the first run
+  (`sed -i 's/maxco_chat_im/<NAME>/g' sql/*.sql`; on macOS `sed -i ''`). Changing only `01_schema.sql`
+  makes `02_migrations.sql` fail with `ERROR 1049 (42000) ... Unknown database 'maxco_chat_im'`.
 - Except `11_dbchanges_202611161515.sql`, no file is **idempotent** — run them once against an empty database, in file-name order.
   For an **existing** database, request the incremental migration files (in the source repo: the
   `sql/dbchanges_*.sql` folder). `sql/dbchanges_202611161515.sql` (the same file as `11_dbchanges_202611161515.sql`) is required for

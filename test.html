@@ -658,7 +658,7 @@
 
   // Same limits and texts as the server (src/utils/chatFileStorage.ts).
   const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
-  const ALLOWED_UPLOAD_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'pdf'];
+  const ALLOWED_UPLOAD_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'mov', 'pdf', 'docx'];
   function checkFile(file) {
     const dot = file.name.lastIndexOf('.');
     const ext = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : '';

@@ -3,7 +3,10 @@ import * as fs from "fs";
 /** Largest file accepted in a chat, measured on the decoded file. */
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
-/** Image, video and PDF (transfer receipts), lowercase, without the dot. */
+/**
+ * Image, video, PDF (transfer receipts) and Word documents, lowercase,
+ * without the dot. Only `docx`: legacy `doc` and macro-enabled `docm` stay out.
+ */
 export const ALLOWED_UPLOAD_EXTENSIONS: readonly string[] = [
   "jpg",
   "jpeg",
@@ -12,6 +15,7 @@ export const ALLOWED_UPLOAD_EXTENSIONS: readonly string[] = [
   "mp4",
   "mov",
   "pdf",
+  "docx",
 ];
 
 export type FileUploadReason = "file_too_large" | "file_type_not_allowed";

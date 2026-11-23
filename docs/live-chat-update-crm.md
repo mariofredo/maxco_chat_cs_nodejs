@@ -19,7 +19,7 @@ What the CRM has to build for:
 - **Colleague typing.** CS in the same chat receive each other's `typing` (`senderType: "admin"`). Show it, for example "Budi (CS) is typing…", so two CS do not answer the same question, and always send `senderName` (`docs/integration-guide-crm.md` section 5).
 - **Closed tickets take no more CS replies.** Disable the input. The server rejects a reply with `send_message_error`.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and stores an **automated message** (`sender_type: "system"`). It is on by default once migration 10 has run; it can be switched off (section 7).
-- **Files** are limited to 50 MB, and only images, videos and PDF are accepted.
+- **Files** are limited to 50 MB, and only images, videos, PDF and Word (docx) are accepted.
 - **Times are UTC.** Times keep their format (`2026-11-19 06:33:39`), but the value is now UTC whatever the database server's zone. Convert it to the browser time zone before showing it (section 8). This fixes times that showed hours off.
 
 ## 2. Lists
@@ -69,7 +69,7 @@ The message is not stored or broadcast.
 |---|---|---|
 | `chat_closed` | CS reply to a **closed CS ticket** | "This ticket is closed". Keep the input of closed CS tickets disabled. |
 | `file_too_large` | file over 50 MB | `message` |
-| `file_type_not_allowed` | not jpg/jpeg/png/webp/mp4/mov/pdf | `message` |
+| `file_type_not_allowed` | not jpg/jpeg/png/webp/mp4/mov/pdf/docx | `message` |
 
 Closed Promotion and Inside Sales chats are unchanged: CS replies are still stored there.
 
@@ -106,11 +106,11 @@ GET /api/chats/user/:userId?categoryIds=1&page=1&pageSize=20
   - Refused: 400 `{ success: false, reason, message, maxBytes }`.
   - Body over about 72 MB: 413 `{ success: false, reason: "file_too_large", message, maxBytes }`.
 - **Socket upload:** `send_message { content_type: 2, file_name, file_data }`. A refused file returns `send_message_error`, as in section 3.3.
-- **Limit:** 50 MB of the real file. **Types:** `jpg, jpeg, png, webp, mp4, mov, pdf`.
+- **Limit:** 50 MB of the real file. **Types:** `jpg, jpeg, png, webp, mp4, mov, pdf, docx`.
 - Check both in the CRM **before** encoding: a much larger payload makes Socket.IO drop the connection silently.
 - Show `message` as is:
   - "File is larger than 50 MB"
-  - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)"
+  - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf, docx)"
 
 ## 7. Auto-close (operations)
 

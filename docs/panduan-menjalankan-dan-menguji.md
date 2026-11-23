@@ -148,8 +148,8 @@ api -X POST $BASE/api/chats/crm/chat/upload -d "{\"fileName\":\"test.txt\",\"fil
 Hasil:
 - Upload pertama mengembalikan `data.file_url` berbentuk `uploads/chat/<angka>_test.png`. Buka `$BASE/<file_url>` di browser atau lewat `curl`; isinya `hello`.
 - Upload kedua ditolak dengan `400`:
-  `{ "success": false, "reason": "file_type_not_allowed", "message": "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)", "maxBytes": 52428800 }`.
-  Hanya jpg, jpeg, png, webp, mp4, mov dan pdf yang diterima, dengan ukuran maksimal 50 MB.
+  `{ "success": false, "reason": "file_type_not_allowed", "message": "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf, docx)", "maxBytes": 52428800 }`.
+  Hanya jpg, jpeg, png, webp, mp4, mov, pdf dan docx yang diterima, dengan ukuran maksimal 50 MB.
 
 **7.8 Menutup chat**
 ```bash

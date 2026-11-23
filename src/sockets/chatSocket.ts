@@ -1,6 +1,7 @@
 import { Server, Socket } from "socket.io";
 import * as chatService from "../services/chatService.js";
 import { sendChatPush } from "../services/pushService.js";
+import { pushTitle } from "../utils/pushTitle.js";
 import { deliverSentMessage } from "./messageDelivery.js";
 import { sendMessageErrorPayload } from "./sendMessageErrors.js";
 
@@ -42,7 +43,10 @@ export function registerChatSocket(io: Server, socket: Socket) {
           void sendChatPush({
             userId: String(chatUserId),
             chatId: String(newMessagePayload.chat_id),
-            title: newMessagePayload.sender_name || "Customer Support",
+            title: pushTitle(
+              newMessagePayload.chat_data?.category_id,
+              newMessagePayload.sender_name
+            ),
             body: buildPushBody(
               Number(newMessagePayload.content_type),
               newMessagePayload.message

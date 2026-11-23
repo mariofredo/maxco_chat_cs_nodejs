@@ -11,6 +11,7 @@ import {
 } from "../utils/autoClose.js";
 import { getChatById } from "./chatService.js";
 import { sendChatPush } from "./pushService.js";
+import { CS_PUSH_TITLE } from "../utils/pushTitle.js";
 
 /**
  * Idle rule of a Customer Support chat, shared by the candidate query and the
@@ -163,7 +164,7 @@ export async function closeIdleChat(chatId: number, minutes: number, template: s
     void sendChatPush({
       userId: String(userId),
       chatId: String(chatId),
-      title: SYSTEM_SENDER_NAME,
+      title: CS_PUSH_TITLE,
       body: text,
     });
   }

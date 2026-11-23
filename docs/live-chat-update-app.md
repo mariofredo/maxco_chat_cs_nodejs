@@ -138,6 +138,7 @@ Send a file with `send_message`:
 ## 5. Push notifications
 
 - CS replies and the automated close message arrive as FCM push with `data: { type: "chat", chat_id }`.
+- The push title of a CS reply or the automated close message is "Customer Support". Promotion and Sales pushes show the agent's name.
 - For a CS ticket, open the CS conversation (section 3), not the single ticket.
 
 ## 6. Reference

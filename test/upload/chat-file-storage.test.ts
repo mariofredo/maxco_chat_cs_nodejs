@@ -14,13 +14,13 @@ test("limit is 50 MiB", () => {
 });
 
 test("accepts allowed types in any case", () => {
-  for (const name of ["a.jpg", "b.JPEG", "PHOTO.JPG", "c.png", "d.webp", "e.mp4", "f.MOV", "receipt.pdf"]) {
+  for (const name of ["a.jpg", "b.JPEG", "PHOTO.JPG", "c.png", "d.webp", "e.mp4", "f.MOV", "receipt.pdf", "form.docx", "FORM.DOCX"]) {
     assert.equal(validateUpload(name, b64(3)).data.length, 3, name);
   }
 });
 
 test("rejects other types", () => {
-  for (const name of ["x.exe", "README", "x.png.exe", "x."]) {
+  for (const name of ["x.exe", "README", "x.png.exe", "x.", "old.doc", "x.docm"]) {
     assert.throws(
       () => validateUpload(name, b64(3)),
       (e: unknown) => e instanceof FileUploadError && e.reason === "file_type_not_allowed",
@@ -55,7 +55,7 @@ test("a payload far above the limit is refused before decoding", () => {
 test("error messages are the agreed text", () => {
   assert.throws(() => validateUpload("a.png", b64(11), 10), { message: "File is larger than 50 MB" });
   assert.throws(() => validateUpload("a.exe", b64(1)), {
-    message: "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf)",
+    message: "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf, docx)",
   });
 });
 

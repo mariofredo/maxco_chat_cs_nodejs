@@ -4,6 +4,9 @@
 // They only touch rows whose chat_ticket starts with TEST-AWC- or whose
 // user_id starts with test-awc- (chats created by the code under test get a
 // random ticket number, so the user id is what marks them).
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import mysql from "mysql2/promise";
 import type { ResultSetHeader, RowDataPacket } from "mysql2";
 import type { Server } from "socket.io";
 import { pool } from "../src/config/db.js";
@@ -20,6 +23,36 @@ export async function cleanupTestChats(): Promise<void> {
      WHERE ${TEST_CHATS}`,
   );
   await pool.query(`DELETE c FROM list_chats c WHERE ${TEST_CHATS}`);
+}
+
+/**
+ * Runs a repo SQL file (path relative to the repo root) on its own connection
+ * that allows several statements, against the test database: the file's
+ * USE `...`; line is dropped so MYSQLDATABASE is the one used. Returns the first
+ * row of the last result set that has rows (the file's closing SELECT).
+ */
+export async function runSqlFile(relPath: string): Promise<RowDataPacket | undefined> {
+  const file = fileURLToPath(new URL(`../${relPath}`, import.meta.url));
+  const sql = (await readFile(file, "utf8")).replace(/^USE\s+`[^`]+`;[ \t]*\r?\n/m, "");
+  const connection = await mysql.createConnection({
+    host: process.env.MYSQLHOST!,
+    port: Number(process.env.MYSQLPORT) || 3306,
+    user: process.env.MYSQLUSER!,
+    password: process.env.MYSQLPASSWORD!,
+    database: process.env.MYSQLDATABASE!,
+    multipleStatements: true,
+    timezone: "Z",
+    dateStrings: true,
+  });
+  try {
+    const [results] = await connection.query(sql);
+    const withRows = (results as unknown[]).filter(
+      (r): r is RowDataPacket[] => Array.isArray(r) && r.length > 0,
+    );
+    return withRows.at(-1)?.[0];
+  } finally {
+    await connection.end();
+  }
 }
 
 export async function insertChat(opts: {

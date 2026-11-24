@@ -28,7 +28,7 @@ npm install
 
 ## 2. Siapkan database (DB kosong)
 
-Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan semua file SQL sesuai urutan nama, dari `01` sampai `11`. Semua file bisa langsung dijalankan di MySQL 8.0 maupun MariaDB. `07_dbchanges_202610191417.sql` sengaja kosong; perubahannya (satu chat inside sales per user) dibuat oleh `11_dbchanges_202611161515.sql`, yang aman dijalankan berulang kali.
+Database dibuat oleh `deploy/sql/01_schema.sql` (`maxco_chat_im`). Jalankan semua file SQL sesuai urutan nama, dari `01` sampai `12`. Semua file bisa langsung dijalankan di MySQL 8.0 maupun MariaDB. `07_dbchanges_202610191417.sql` sengaja kosong; perubahannya (satu chat inside sales per user) dibuat oleh `11_dbchanges_202611161515.sql`, lalu `12_dbchanges_202611241200.sql` mempersempitnya menjadi satu chat inside sales yang AKTIF per user (chat yang sudah ditutup disimpan sebagai history). Kedua file aman dijalankan berulang kali.
 
 ```bash
 MYSQL="/c/Program Files/MySQL/MySQL Server 8.0/bin/mysql.exe"
@@ -37,7 +37,7 @@ export MYSQL_PWD='<password root MySQL>'
 for f in deploy/sql/*.sql; do echo "== $f"; "$MYSQL" -u root < "$f" || break; done
 ```
 
-Baris terakhir yang dicetak `11_*.sql` harus `1  1  RESTRICT  0` (`NO ACTION` di posisi `RESTRICT` sama saja, tidak masalah).
+Baris terakhir yang dicetak `11_*.sql` harus `1  1  RESTRICT  0` (`NO ACTION` di posisi `RESTRICT` sama saja, tidak masalah), dan yang dicetak `12_*.sql` harus `1  1  0`.
 
 Cek hasilnya:
 ```bash

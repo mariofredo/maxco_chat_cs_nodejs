@@ -6,7 +6,7 @@
 #
 #   ./run-sql.sh              # new database: every sql/*.sql in name order
 #                             # existing database: only the files it is missing,
-#                             # then 11 (safe to repeat)
+#                             # then 11 and 12 (safe to repeat)
 #   DRY_RUN=1 ./run-sql.sh    # only show what would run
 #   YES=1 ./run-sql.sh        # do not ask
 #   NO_BACKUP=0 ./run-sql.sh  # back an existing database up first (default: no backup)
@@ -143,7 +143,7 @@ else
     case "$b" in
       01_*) echo "    done  $f"; continue ;;
       07_*) echo "    skip  $f   (empty placeholder; 11 makes its change)"; continue ;;
-      11_*) echo "    run   $f   (safe to repeat)"; PLAN+=("$f"); continue ;;
+      11_*|12_*) echo "    run   $f   (safe to repeat)"; PLAN+=("$f"); continue ;;
     esac
     m="$(markers "$b")"
     [ "$m" != "?" ] || die "no check known for $f. Run the files by hand: ./run-sql.sh sql/<file>.sql ..."
@@ -201,3 +201,4 @@ done
 echo
 echo "==> Tables in $DB_NAME: $(q "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='$DB_NAME'") (a complete database has 7)"
 echo "    File 11 should have printed: 1  1  RESTRICT  0   (NO ACTION in place of RESTRICT is fine)"
+echo "    File 12 should have printed: 1  1  0"

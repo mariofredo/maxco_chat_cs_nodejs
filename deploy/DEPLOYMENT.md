@@ -122,14 +122,16 @@ DRY_RUN=1 ./run-sql.sh    # shows what would run, changes nothing
 - **New, empty database:** runs every file in `sql/` in name order.
 - **Database that already has data** (an upgrade, or one that stopped halfway): checks which file
   changes are already there, and runs only the missing files, then `11_dbchanges_202611161515.sql`
-  (safe to repeat). `07` is an empty placeholder and is skipped. Running the script again is safe.
-- **No backup by default.** `11` merges duplicate inside sales chats (it deletes the extra chats after
-  moving their messages), so back the database up first: your own backup, or `NO_BACKUP=0 ./run-sql.sh`,
-  which dumps it to `../backup-maxco_chat_im-<time>.sql` before anything changes (`BACKUP_DIR` changes
-  the folder).
+  and `12_dbchanges_202611241200.sql` (safe to repeat). `07` is an empty placeholder and is skipped.
+  Running the script again is safe.
+- **No backup by default.** While its unique index is missing, `11` merges duplicate inside sales chats
+  (it deletes the extra chats after moving their messages), so back the database up first: your own
+  backup, or `NO_BACKUP=0 ./run-sql.sh`, which dumps it to `../backup-maxco_chat_im-<time>.sql` before
+  anything changes (`BACKUP_DIR` changes the folder).
 - **A file that is half applied** stops the script before anything changes.
-- It stops at the first file that fails, and ends with the table count (7) and the file 11 check
-  (`1  1  RESTRICT  0`; `NO ACTION` in place of `RESTRICT` means the same and is fine).
+- It stops at the first file that fails, and ends with the table count (7) and the file 11 and 12
+  checks (`1  1  RESTRICT  0` and `1  1  0`; `NO ACTION` in place of `RESTRICT` means the same and is
+  fine).
 - `YES=1` skips the question. `./run-sql.sh sql/<file>.sql ...` runs exactly the files given, in that
   order.
 - **Database user:** the files need `CREATE`, `ALTER`, `INDEX`, `REFERENCES`, `CREATE TEMPORARY TABLES`,
@@ -139,9 +141,9 @@ DRY_RUN=1 ./run-sql.sh    # shows what would run, changes nothing
 - **With `sudo`**, write the variables **after** `sudo`: `sudo NO_BACKUP=0 ./run-sql.sh`. Written
   before `sudo` (`NO_BACKUP=0 sudo ./run-sql.sh`), they are dropped.
 
-**Upgrade** (the database already has data): stop the app while the script runs. `11` merges duplicate
-inside sales chats and rebuilds `list_chats` (writes to it wait until it is done); a running app could
-create a new duplicate or wait on that lock.
+**Upgrade** (the database already has data): stop the app while the script runs. `11` (while its unique
+index is missing) merges duplicate inside sales chats, and `11` and `12` rebuild `list_chats` (writes to
+it wait until it is done); a running app could create a new duplicate or wait on that lock.
 
 ```bash
 docker compose stop app
@@ -153,7 +155,7 @@ With a `mysql` client on the machine, the same by hand (empty database):
 
 ```bash
 for f in sql/*.sql; do echo "== $f"; mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < "$f" || break; done
-# the order comes from the file names: 01_schema, 02_migrations, 03..11_dbchanges
+# the order comes from the file names: 01_schema, 02_migrations, 03..12_dbchanges
 # `|| break` stops at the first file that fails, so the next ones never run on half-built tables
 ```
 
@@ -170,7 +172,7 @@ Important notes:
   client uses a different name, change it in `.env` **and in every `sql/` file** before the first run
   (`sed -i 's/maxco_chat_im/<NAME>/g' sql/*.sql`; on macOS `sed -i ''`). Changing only `01_schema.sql`
   makes `02_migrations.sql` fail with `ERROR 1049 (42000) ... Unknown database 'maxco_chat_im'`.
-- Except `11_dbchanges_202611161515.sql`, no file is **idempotent** — run them once against an empty database, in file-name order.
+- Except `11_dbchanges_202611161515.sql` and `12_dbchanges_202611241200.sql`, no file is **idempotent** — run them once against an empty database, in file-name order.
   For an **existing** database, request the incremental migration files (in the source repo: the
   `sql/dbchanges_*.sql` folder). `sql/dbchanges_202611161515.sql` (the same file as `11_dbchanges_202611161515.sql`) is required for
   databases that already run the app: it removes the duplicate inside sales chats (category 3) that
@@ -187,14 +189,16 @@ Important notes:
   database where `07_dbchanges_202610191417.sql` stopped at line 53 with `ERROR 1215 ... Cannot add
   foreign key constraint` (MySQL 8) or `ERROR 1901 ... cannot be used in the GENERATED ALWAYS AS clause`
   (newer MariaDB). Such a database has no unique index, so duplicate inside sales chats can be created
-  again. The file merges those duplicates (per user the newest **active** chat is kept — the newest
-  chat when none is active — and the messages of the others move to it), changes the category
+  again. While the unique index is missing, the file merges those duplicates (per user the newest
+  **active** chat is kept — the newest chat when none is active — and the messages of the others move
+  to it); once the index exists it merges nothing. It also changes the category
   foreign key to `ON UPDATE RESTRICT`, and adds the missing column and unique index — each step only
   when needed, so it is safe on any database and safe to run more than once. Back up first:
   ```bash
   # Scenario A - your own MySQL
   mysqldump -h <MYSQLHOST> -u <MYSQLUSER> -p maxco_chat_im > backup.sql
   mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < sql/11_dbchanges_202611161515.sql
+  mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < sql/12_dbchanges_202611241200.sql
 
   # Scenario B - MySQL from docker-compose.with-db.yml (root password = MYSQLPASSWORD in .env)
   DB="docker compose -f docker-compose.yml -f docker-compose.with-db.yml exec -T db"
@@ -206,9 +210,17 @@ Important notes:
   $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/08_dbchanges_202610221020.sql
   $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/09_dbchanges_202610231200.sql
   $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/10_dbchanges_202611181400.sql
+  # on every database, after 11:
+  $DB mysql -uroot -p"<MYSQLPASSWORD>" < sql/12_dbchanges_202611241200.sql
   ```
   The last lines file 11 prints should read `1  1  RESTRICT  0`
   (`NO ACTION` in place of `RESTRICT` means the same and is fine).
+- `12_dbchanges_202611241200.sql` (source repo: `sql/dbchanges_202611241200.sql`) makes the unique index
+  `uq_list_chats_sales_chat` count only `active` inside sales chats, so a member can have closed inside
+  sales chats (history) next to one active chat. It is required for databases that already run the app,
+  and runs after 11 (`run-sql.sh` runs both). It deletes nothing and is safe to run more than once. By
+  hand: `mysql -h <MYSQLHOST> -u <MYSQLUSER> -p < sql/12_dbchanges_202611241200.sql`; the last line it
+  prints should read `1  1  0`.
 - `01_schema.sql` already includes the **required seed** rows for `list_content_type` (id 1 = Text, 2 = File).
   Without them, messages fail to save (foreign key) and the CRM message list stays empty.
   `05_dbchanges_202610161456.sql` seeds chat category 3 (Inside Sales); without it the client app
@@ -405,7 +417,7 @@ docker buildx build --platform linux/amd64,linux/arm64 \
 | `ER_BAD_FIELD_ERROR sender_name/user_name/admin_name` | `02_migrations.sql` was not run |
 | `ER_BAD_FIELD_ERROR user_referrer_id/user_referrer_name` | `04_dbchanges_*` / `06_dbchanges_*` not run on an existing database → run `sql/dbchanges_202610121639.sql` then `sql/dbchanges_202610190950.sql` |
 | `ER_NO_DB/ER_FK_ON_CATEGORY` or `POST /api/chats/user` fails with a foreign key error on `list_chats.category_id` | category 3 seed missing → run `sql/dbchanges_202610161456.sql` |
-| A user shows two inside sales chats (category 3) | The unique index `uq_list_chats_sales_chat` is missing → run `sql/11_dbchanges_202611161515.sql` (§5; it removes the duplicates and adds the index, safe to re-run) |
+| A user shows two **active** inside sales chats (category 3) | The unique index `uq_list_chats_sales_chat` is missing → run `sql/11_dbchanges_202611161515.sql`, then `sql/12_dbchanges_202611241200.sql` (§5; 11 removes the duplicates and adds the index, 12 makes it count only active chats; both safe to re-run) |
 | `ERROR 1215 (HY000) at line 53: Cannot add foreign key constraint` or `ERROR 1901 ... cannot be used in the GENERATED ALWAYS AS clause` while running `07_dbchanges_202610191417.sql` | The category foreign key still uses `ON UPDATE CASCADE`, which MySQL 8 / newer MariaDB refuse for that column → run `sql/11_dbchanges_202611161515.sql` (§5), then any later file that has not run yet (§5 shows how to check 08/09/10) |
 | `install.sh --with-db` on a first install stops with `container maxco_chat_cs_db is unhealthy` | Check `docker compose -f docker-compose.yml -f docker-compose.with-db.yml logs db`. **No `ERROR` line**: MySQL was only slow to finish its first setup (slow disk/CPU) — wait a minute and run `./install.sh --with-db` again. **An `ERROR` line from an `.sql` file** (the line stays in the log for the container's whole life, so it can be old): first count the chats — `docker compose -f docker-compose.yml -f docker-compose.with-db.yml exec -T db mysql -uroot -p"<MYSQLPASSWORD>" -N -e "SELECT COUNT(*) FROM maxco_chat_im.list_chats"`. **Only if it prints `0`** (nothing to lose): `docker compose -f docker-compose.yml -f docker-compose.with-db.yml down -v` (deletes the database volume), then `./install.sh --with-db` again with the fixed `sql/` files. **Any other result: never run `down -v`** — follow the `ERROR 1215` row above (run file 11 per §5) |
 | Upload returns `{"success":false,"message":"File upload failed"}` with `EACCES` in the logs | `/app/uploads` is mounted with the wrong ownership (e.g. a host folder bind mount) → use the `chat_uploads` named volume, or `chown -R 1000:1000` the host folder |

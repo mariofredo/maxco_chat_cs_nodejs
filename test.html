@@ -208,7 +208,7 @@
         <button class="btn" data-act="supportThread" title="GET /api/client/chat/support-thread/:userId — semua tiket CS sebagai satu thread">Thread tiket</button>
         <button class="btn" data-act="myChats" title="GET /api/chats/user/:userId?categoryIds=…">Chat saya</button>
         <button class="btn" data-act="unread">Belum dibaca</button>
-        <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
+        <button class="btn" data-act="ensureSales" title="POST /api/chats/user dengan source app: membuat chat Inside Sales jika belum ada, hanya chat aktif yang dikembalikan, salesMismatch jika sales berbeda">Inside sales</button>
       </div>
       <div class="sub">Daftar chat (seperti di app: tiket CS digabung jadi satu percakapan)</div>
       <div class="row">
@@ -922,7 +922,7 @@
     myChats,
     supportThread,
     unread: () => api('app', 'GET', `/api/client/chat/unread/${encodeURIComponent(identity('app').id)}`),
-    ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), ...pageBody() }),
+    ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), source: 'app', ...pageBody() }),
     send: (s) => sendMessage(s),
     sendFile: (s) => sendFile(s),
     teamPresence,

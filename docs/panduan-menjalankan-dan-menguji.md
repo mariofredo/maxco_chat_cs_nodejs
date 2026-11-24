@@ -126,9 +126,12 @@ Waktu (`created_at`, `last_message_time`, dan lainnya) dalam UTC, apa pun zona w
 **7.5 Daftar chat milik user, dan chat Inside Sales otomatis**
 ```bash
 api "$BASE/api/chats/user/user123?page=1&pageSize=20"
-api -X POST $BASE/api/chats/user -d '{"userId":"user123","userName":"Budi","userReferrerId":"sales1","userReferrerName":"Sales Satu"}'
+api -X POST $BASE/api/chats/user -d '{"userId":"user123","userName":"Budi","userReferrerId":"sales1","userReferrerName":"Sales Satu","source":"app"}'
+api -X POST $BASE/api/chats/user -d '{"userId":"user123","userName":"Budi","userReferrerId":"sales9","userReferrerName":"Sales Sembilan","source":"app"}'
 ```
-Panggilan kedua membuat chat kategori 3 jika belum ada. Ulangi beberapa kali: tetap satu chat kategori 3 per user.
+Panggilan kedua membuat chat kategori 3 jika belum ada. Ulangi beberapa kali: tetap satu chat kategori 3 yang aktif per user.
+
+Dengan `"source":"app"` (seperti aplikasi mobile), chat Inside Sales yang sudah `closed` tidak ikut di `data` dan tidak dihitung di `pagination.total`. Panggilan ketiga memakai `userReferrerId` lain (`sales9`): hasilnya tetap chat aktif milik `sales1`, dengan tambahan `salesMismatch: { "sent": "sales9", "currentReferrerId": "sales1", "currentReferrerName": "Sales Satu" }`, dan tidak ada yang berubah di database. Pada panggilan yang memakai sales yang sama, field `salesMismatch` tidak ada. Tanpa `source`, semua chat tampil seperti sebelumnya dan `salesMismatch` tidak pernah muncul.
 
 **7.6 Chat dari sisi CRM**
 ```bash

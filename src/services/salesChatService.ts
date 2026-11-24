@@ -47,7 +47,8 @@ function isDuplicateEntry(err: unknown): boolean {
   );
 }
 
-function newSalesTicket(): string {
+// A new ticket number, XXXX-XXXX-XXXX.
+export function newSalesTicket(): string {
   const randString = randomNumericString(12);
   return `${randString.slice(0, 4)}-${randString.slice(4, 8)}-${randString.slice(8, 12)}`;
 }
@@ -93,7 +94,8 @@ async function closeAndInsert(
       await conn.commit();
       return { closedChatId, newChatId: inserted.insertId };
     } catch (err) {
-      await conn.rollback();
+      // A failing rollback must not hide the error that caused it.
+      await conn.rollback().catch(() => {});
       throw err;
     }
   } finally {
@@ -185,4 +187,139 @@ export async function reassignSalesChat(
     }
     return replaceSalesChat(id, name, salesPerson, current, true);
   });
+}
+
+// What the app sent and what the active chat says, when they are two different
+// sales persons. The app uses it to refresh its copy of the user's data.
+export type SalesMismatch = {
+  sent: string;
+  currentReferrerId: string;
+  currentReferrerName: string | null;
+};
+
+/**
+ * The app's POST /api/chats/user (source "app"): makes sure the client has an
+ * active inside sales chat, without ever moving it to another sales person.
+ *
+ *   - no active chat: one is created for [sales] (closed ones stay closed);
+ *   - active chat without a sales person: replaced by one for [sales];
+ *   - same sales person, or the app sent none: nothing changes;
+ *   - another sales person: nothing changes and the mismatch is returned. Only
+ *     the CRM's reassign moves a client.
+ */
+export async function ensureAppSalesChat(
+  userId: string,
+  userName: string,
+  sales: SalesPerson,
+): Promise<SalesMismatch | null> {
+  const id = userId.trim();
+  if (!id) return null;
+  const name = userName.trim();
+  const salesPerson = { id: sales.id.trim(), name: sales.name.trim() };
+
+  return withSalesChatLock(id, async () => {
+    const current = await findAnyActiveInsideSalesChat(id);
+    if (!current) {
+      await replaceSalesChat(id, name, salesPerson, null, false);
+      return null;
+    }
+
+    const currentId = String(current.user_referrer_id ?? "").trim();
+    if (!salesPerson.id || currentId === salesPerson.id) {
+      return null;
+    }
+    if (!currentId) {
+      // The chat has no sales person yet: the app's one takes it over.
+      await replaceSalesChat(id, name, salesPerson, current, true);
+      return null;
+    }
+
+    console.warn(
+      `sales mismatch: user ${id} sent sales ${salesPerson.id}, chat ${current.id} belongs to ${currentId}`,
+    );
+    return {
+      sent: salesPerson.id,
+      currentReferrerId: currentId,
+      currentReferrerName: current.user_referrer_name ?? null,
+    };
+  });
+}
+
+/**
+ * Creates the inside sales chat of [userId] when the user has none at all (a
+ * chat of any status counts), for the callers that do not send source "app".
+ * Serialized per user: the client can send the same POST twice at once (room
+ * list load racing a socket-triggered refresh), and a plain check-then-insert
+ * lets both requests insert a chat.
+ */
+export async function ensureUserSalesChat(
+  userId: string,
+  userName: string,
+  userReferrerId: string,
+  userReferrerName: string,
+): Promise<void> {
+  if (!userId) return;
+
+  console.log(`ensure inside sales chat user Id: ${userId}, username: ${userName}, userReferrerId: ${userReferrerId}, userReferrerName: ${userReferrerName}`);
+
+  return withSalesChatLock(userId.trim(), () =>
+    createSalesChatIfMissing(userId, userName, userReferrerId, userReferrerName),
+  );
+}
+
+async function createSalesChatIfMissing(
+  userId: string,
+  userName: string,
+  userReferrerId: string,
+  userReferrerName: string,
+): Promise<void> {
+  const [existing] = await pool.query<RowDataPacket[]>(
+    "SELECT id FROM list_chats WHERE user_id = ? AND category_id = 3 LIMIT 1",
+    [userId],
+  );
+
+  if (existing.length > 0) {
+    return;
+  }
+
+  try {
+    const [result] = await pool.query<ResultSetHeader>(
+      `INSERT INTO list_chats (
+         chat_ticket, user_id, user_name, user_referrer_id, user_referrer_name, status,
+         category_id, admin_id, admin_name, created_at
+       ) VALUES (?, ?, ?, ?, ?, 'active', 3, ?, ?, NOW())`,
+      [
+        newSalesTicket(),
+        userId,
+        userName,
+        userReferrerId,
+        userReferrerName,
+        userReferrerId,
+        userReferrerName,
+      ],
+    );
+    // Tell the referenced sales member (user_referrer_id) about the new
+    // inside-sales room so their CRM socket can join it even while the chat
+    // page is closed. Scoped to that member only: the channel is per member id.
+    if (userReferrerId) {
+      const [rows] = await pool.query<RowDataPacket[]>(
+        "SELECT * FROM list_chats WHERE id = ?",
+        [result.insertId],
+      );
+      const chat = rows[0];
+      if (chat) {
+        const io = getIO();
+        io.to(`user_${userReferrerId}`).emit("new_user_chatroom", { chatData: chat });
+      }
+    }
+  } catch (err) {
+    // The unique index on the inside sales chat (one ACTIVE chat per user,
+    // sql/dbchanges_202611241200.sql) turns a lost race into ER_DUP_ENTRY:
+    // another request already created the chat, which is exactly what this
+    // function was about to create.
+    if (isDuplicateEntry(err)) {
+      return;
+    }
+    throw err;
+  }
 }

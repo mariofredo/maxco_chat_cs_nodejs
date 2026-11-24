@@ -39,6 +39,7 @@ export async function fetchUserChats(
   page?: number,
   pageSize?: number,
   categoryIds: number[] = [],
+  options: { activeSalesOnly?: boolean } = {},
 ): Promise<UserChatsPage> {
   const paginated = page !== undefined || pageSize !== undefined;
   const limit = Math.max(1, Number(pageSize) || 20);
@@ -49,9 +50,16 @@ export async function fetchUserChats(
     categoryIds.length > 0
       ? ` AND category_id IN (${categoryIds.map(() => "?").join(", ")})`
       : "";
+  // activeSalesOnly: an Inside Sales chat that is not active (a closed one, left
+  // behind when the client was moved to another sales person) is left out, on
+  // the list and the count. Other categories are untouched.
+  const activeSalesSql = (prefix = "") =>
+    options.activeSalesOnly
+      ? ` AND (${prefix}category_id <> 3 OR ${prefix}status = 'active')`
+      : "";
 
   const [countRows] = await pool.query<RowDataPacket[]>(
-    `SELECT COUNT(*) AS total FROM list_chats WHERE user_id = ?${categorySql}`,
+    `SELECT COUNT(*) AS total FROM list_chats WHERE user_id = ?${categorySql}${activeSalesSql()}`,
     [userId, ...categoryIds]
   );
   const total = Number(countRows[0]?.total ?? 0);
@@ -67,7 +75,7 @@ export async function fetchUserChats(
             metadata,
             ROW_NUMBER() OVER (PARTITION BY chat_id ORDER BY created_at DESC) AS rn
         FROM list_messages
-        WHERE chat_id IN (SELECT id FROM list_chats WHERE user_id = ?${categorySql})
+        WHERE chat_id IN (SELECT id FROM list_chats WHERE user_id = ?${categorySql}${activeSalesSql()})
     )
     SELECT
         lc.*,
@@ -79,7 +87,7 @@ export async function fetchUserChats(
     FROM list_chats lc
     LEFT JOIN last_msg lm 
         ON lc.id = lm.chat_id AND lm.rn = 1
-    WHERE lc.user_id = ?${categorySql.replace("category_id", "lc.category_id")}
+    WHERE lc.user_id = ?${categorySql.replace("category_id", "lc.category_id")}${activeSalesSql("lc.")}
     ORDER BY
         lc.category_id DESC,
         (lm.created_at IS NULL) ASC,
@@ -499,106 +507,4 @@ export async function markRead(chatId: string, userId: string) {
     [chatId, userId]
   );
   return (result as any).affectedRows > 0;
-}
-
-
-// In-flight "ensure" calls per user. The client can send the same POST twice
-// at once (room list load racing a socket-triggered refresh), and a plain
-// check-then-insert lets both requests insert an inside sales chat. The
-// second request now waits for the first one instead of racing it.
-const pendingSalesChatEnsures = new Map<string, Promise<void>>();
-
-export async function ensureUserSalesChat(
-  userId: string,
-  userName: string,
-  userReferrerId: string,
-  userReferrerName: string
-): Promise<void> {
-  if (!userId) return;
-
-  console.log(`ensure inside sales chat user Id: ${userId}, username: ${userName}, userReferrerId: ${userReferrerId}, userReferrerName: ${userReferrerName}`)
-
-  const pending = pendingSalesChatEnsures.get(userId);
-  if (pending) {
-    // Same user is already being ensured: wait for that one instead of
-    // running a second check-then-insert in parallel with it.
-    return pending;
-  }
-
-  const ensure = createSalesChatIfMissing(
-    userId,
-    userName,
-    userReferrerId,
-    userReferrerName
-  ).finally(() => {
-    if (pendingSalesChatEnsures.get(userId) === ensure) {
-      pendingSalesChatEnsures.delete(userId);
-    }
-  });
-
-  pendingSalesChatEnsures.set(userId, ensure);
-  return ensure;
-}
-
-async function createSalesChatIfMissing(
-  userId: string,
-  userName: string,
-  userReferrerId: string,
-  userReferrerName: string
-): Promise<void> {
-  const [existing] = await pool.query<RowDataPacket[]>(
-    "SELECT id FROM list_chats WHERE user_id = ? AND category_id = 3 LIMIT 1",
-    [userId]
-  );
-
-  if (existing.length > 0) {
-    return;
-  }
-
-  const randString = randomNumericString(12);
-  const finalRandString = `${randString.slice(0, 4)}-${randString.slice(4, 8)}-${randString.slice(8, 12)}`;
-
-  try {
-    const [result] = await pool.query<ResultSetHeader>(
-      `INSERT INTO list_chats (
-         chat_ticket, user_id, user_name, user_referrer_id, user_referrer_name, status,
-         category_id, admin_id, admin_name, created_at
-       ) VALUES (?, ?, ?, ?, ?, 'active', 3, ?, ?, NOW())`,
-      [
-        finalRandString,
-        userId,
-        userName,
-        userReferrerId,
-        userReferrerName,
-        userReferrerId,
-        userReferrerName,
-      ]
-    );
-    // Tell the referenced sales member (user_referrer_id) about the new
-    // inside-sales room so their CRM socket can join it even while the chat
-    // page is closed. Scoped to that member only: the channel is per member id.
-    if (userReferrerId) {
-      const [rows] = await pool.query<RowDataPacket[]>(
-        "SELECT * FROM list_chats WHERE id = ?",
-        [result.insertId]
-      );
-      const chat = rows[0];
-      if (chat) {
-        const io = getIO();
-        io.to(`user_${userReferrerId}`).emit("new_user_chatroom", { chatData: chat });
-      }
-    }
-  } catch (err) {
-    // The unique index on the inside sales chat (sql/dbchanges_202611161515.sql)
-    // turns a lost race into ER_DUP_ENTRY: another request already created
-    // the chat, which is exactly what this function was about to create.
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      (err as { code?: string }).code === "ER_DUP_ENTRY"
-    ) {
-      return;
-    }
-    throw err;
-  }
 }

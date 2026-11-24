@@ -198,7 +198,7 @@ When it closes a chat, the server:
 
 Render `sender_type: 'system'` as the **Automated message** bubble (`metadata.type === 'auto_close'`). Never treat it as a message from the user. A `system` message also appears in chat history and as `last_message` of a chat.
 
-`chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2).
+`chat_closed.reason` is `"auto_no_reply"` (automated close) or `"agent"` (closed by CS). Both mean the ticket is closed: show "Ticket #… is closed" and keep the input enabled (section 9.2). A third value, `"sales_changed"`, only concerns Inside Sales chats (see "Inside Sales chat" below).
 
 The feature ships switched on (`auto_close_minutes = 10`). Release this app version before the backend runs migration 10, or the backend sets `auto_close_minutes = 0` until then.
 
@@ -297,6 +297,31 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 - No value, an empty value or an invalid value means every category, the same as before.
 - `pagination.total` counts only the filtered chats. Paging (`page`, `pageSize`) works as before.
 - Example: the user's ticket history is `GET /api/chats/user/<userId>?categoryIds=1&page=1&pageSize=20`. Each row is one ticket (`chat_ticket`, `status`, `created_at`, `closed_at`, last message).
+
+## Inside Sales chat
+
+`POST /api/chats/user` also makes sure the user has an Inside Sales chat (`category_id = 3`). Add `"source": "app"` to the body:
+
+```json
+{ "userId": "user123", "userName": "Budi", "userReferrerId": "sales1", "userReferrerName": "Sales Satu", "source": "app", "page": 1, "pageSize": 20 }
+```
+
+- **Only the active Inside Sales chat is listed.** When the CRM moves a user to another sales person, the old chat is closed (it stays on the server with its messages) and the new sales person gets a new chat. With `source: "app"` the closed ones are left out of `data` and of `pagination.total`. Customer Support and Promotion chats are not affected.
+- **`userReferrerId` / `userReferrerName`** are the sales person the app currently knows for the user. This call never moves the user to another sales person:
+  - no active Inside Sales chat: the server creates one for that sales person;
+  - the active chat has no sales person yet: the server replaces it with one for that sales person;
+  - the same sales person, or no `userReferrerId`: nothing changes.
+- **`salesMismatch`** appears when the active chat belongs to a different sales person than `userReferrerId`. The list still holds the active chat, and nothing was changed:
+
+  ```json
+  "salesMismatch": { "sent": "sales1", "currentReferrerId": "sales2", "currentReferrerName": "Sales Dua" }
+  ```
+
+  It means the app's copy of the user's sales person is out of date. Show the chat as it is. Refreshing the user's data, and sending the new `userReferrerId` next time, is optional. The field is left out (not `null`) when there is no mismatch.
+- **When the CRM moves the user** while the app is open, the app receives:
+  - `chat_closed` `{ chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`: drop that chat from the list and close its screen;
+  - `new_user_chatroom` `{ chatData }` on `user_<userId>`: use `chatData` as the Inside Sales chat and `join_chat` its room.
+- **Without `source`** (or with any other value) nothing changes: every chat is listed, closed Inside Sales chats included, and there is no `salesMismatch`.
 
 ## Times
 

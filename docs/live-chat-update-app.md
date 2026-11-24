@@ -4,7 +4,7 @@ What the mobile app has to build for the new Customer Support (CS) ticket flow, 
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
 - **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 upload limit, category filter and all-CS access, PR #12 UTC times).
-- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 4 now shows typing from several CS.
+- **Exhaustive contract:** `docs/integration-guide-app.md`, sections 9, "File uploads", "Chat list filter", "Inside Sales chat" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 4 now shows typing from several CS.
 
 ## 1. What changes for the user
 
@@ -47,11 +47,26 @@ Header: X-API-Key
 |---|---|---|
 | 1 | Customer Support | **One row** for all CS tickets. Status and last message come from the newest ticket. Opening it shows the continuous conversation (section 3). |
 | 2 | Promotion | One row per chat, as today. |
-| 3 | Inside Sales | One row per chat, as today. |
+| 3 | Inside Sales | One row per chat, as today. With `source: "app"` (section 2.1) only the active one. |
 
 - `categoryIds` is optional. With no value you get every category. `categoryIds=1` returns only the CS tickets, and `pagination.total` counts only those.
 - Each row has `id`, `chat_ticket`, `category_id`, `status` (`pending` / `active` / `closed`), `created_at`, `closed_at`, `last_message`, `last_message_time`, `last_message_content_type`, `last_message_sender_id`.
 - Unread badge: `GET /api/client/chat/unread/:userId` returns `{ total, chats: [{ chatId, unread }] }`. For the single CS row, add up the unread counts of all CS tickets. Automated messages count as unread.
+
+### 2.1 Inside Sales chat
+
+The Inside Sales chat of a user can change sales person: the CRM closes the old chat and opens a new one for the new sales person. To show only the current one, load the list with `POST /api/chats/user` and `"source": "app"`:
+
+```
+POST /api/chats/user
+{ userId, userName, userReferrerId, userReferrerName, source: "app", page, pageSize, categoryIds? }
+→ { success, data: [ chat rows ], pagination, salesMismatch? }
+```
+
+- With `source: "app"`, closed Inside Sales chats are not in `data` or in `pagination.total`. Without `source` nothing changes: every chat is listed.
+- `userReferrerId` / `userReferrerName` are the sales person the app knows. The server creates the Inside Sales chat when there is no active one (or when the active one has no sales person), and never moves the user to another sales person.
+- **`salesMismatch`** `{ sent, currentReferrerId, currentReferrerName }` means the active chat belongs to a different sales person than the one the app sent: the app's copy is out of date. The list still holds the active chat. Refreshing the user's data is optional. The field is absent when there is no mismatch.
+- Live: `chat_closed` with `reason: "sales_changed"` on `chat_<old id>` means the CRM moved the user. Drop that chat from the list and close its screen. The new chat arrives as `new_user_chatroom { chatData }`: show it as the Inside Sales chat and `join_chat` its room.
 
 ## 3. The Customer Support conversation
 
@@ -105,7 +120,7 @@ Under the last item, show `Send a message to open a new ticket.` only when `curr
 |---|---|---|
 | `new_message` with `previous_chat_id: null` | normal message | add the bubble |
 | `new_message` with `previous_chat_id` set and `chat_data.category_id === 1` | the message was addressed to a closed ticket and stored in the user's open ticket | make `chat_id` the current ticket. If `is_new_ticket` is true, draw `New ticket #<chat_data.chat_ticket> opened` first. Then add the bubble. |
-| `chat_closed { chatId, chatData, reason }` | a ticket was closed. `reason` is `"auto_no_reply"` (automated) or `"agent"` (closed by CS) | if `chatId` is the current ticket, draw the closed marker and the "Send a message…" line. **Ignore it for any other chat.** |
+| `chat_closed { chatId, chatData, reason }` | a ticket was closed. `reason` is `"auto_no_reply"` (automated) or `"agent"` (closed by CS) | if `chatId` is the current ticket, draw the closed marker and the "Send a message…" line. **Ignore it for any other chat.** With `reason: "sales_changed"` it is an Inside Sales chat, not a ticket: see section 2.1. |
 | `new_user_chatroom { chatData }` | a new room for this user, for example the new ticket opened from another device | `join_chat` that room |
 | `send_message_error { chat_id, reason, message, maxBytes }` | the server refused the message (section 4) | show `message` and do not add the bubble |
 
@@ -150,10 +165,11 @@ Send a file with `send_message`:
 | REST | `GET /api/client/chat/unread/:userId` | `{ total, chats: [{ chatId, unread }] }` |
 | REST | `PUT /api/chats/:chatId/read` | `{ userId }` |
 | REST | `POST /api/chats` | `{ userId, userName }` → new or open CS chat |
+| REST | `POST /api/chats/user` | `{ userId, userName, userReferrerId, userReferrerName, source: "app", page, pageSize }` → chat rows + `pagination` + `salesMismatch?` (section 2.1) |
 | to server | `send_message` | `{ chat_id, sender_id, sender_type: "user", sender_name, content_type, message \| file_name + file_data }` |
 | to server | `join_chat` / `join_user` | `{ chatId, userId }` / `{ userId }` |
 | from server | `new_message` | message fields + `chat_data`, `previous_chat_id`, `is_new_ticket` |
-| from server | `chat_closed` | `{ chatId, chatData, reason }` |
+| from server | `chat_closed` | `{ chatId, chatData, reason: "auto_no_reply" \| "agent" \| "sales_changed" }` |
 | from server | `new_user_chatroom` | `{ chatData }` |
 | from server | `send_message_error` | `{ chat_id, reason, message?, maxBytes? }` |
 
@@ -178,3 +194,4 @@ Open `test.html` (repo root) against the backend. The **App** panel plays this a
 - **Auto-close is on by default** (`auto_close_minutes = 10`) once the backend runs migration 10. Release the app first, or ask the backend team to set it to `0` until then; no restart is needed.
 - **Times:** release the app together with the backend. Before it, times were the database server's local time in the same format, so an app that reads them as UTC shows them shifted against the old backend, and an app that shows the raw text shows UTC (7 hours behind WIB) against the new one.
 - **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.
+- **`source: "app"`** is opt-in. An app version that does not send it keeps listing every Inside Sales chat, closed ones included, and gets no `salesMismatch`.

@@ -3,7 +3,7 @@
 What the mobile app builds so that, after the CRM moves a user to another sales person, the user sees and talks only to the new sales person.
 
 - **Audience:** the Flutter team that builds the user-facing Live Chat.
-- **Backend:** PR #20, in the first backend image after `maxco-chat-cs:1.1.2`.
+- **Backend:** image `maxco-chat-cs:1.1.3` (PR #20).
 - **Full contract:** `docs/integration-guide-app.md`, sections "Inside Sales chat" and "Chat list filter". This guide is the part of it the app builds for this change.
 - The code samples are Dart sketches for `socket_io_client` and `http`. They were **not compiled or run**; check them against the package versions you use.
 

@@ -38,7 +38,7 @@ APP_IMAGE_TAG=""
 if [ -f .env ]; then
   APP_IMAGE_TAG="$(grep -E '^APP_IMAGE=' .env | head -n1 | cut -d= -f2- | tr -d ' \r' || true)"
 fi
-APP_IMAGE_TAG="${APP_IMAGE_TAG:-maxco-chat-cs:1.1.2}"
+APP_IMAGE_TAG="${APP_IMAGE_TAG:-maxco-chat-cs:1.1.3}"
 EXPECTED_VER="${APP_IMAGE_TAG#*:}"   # the version part of APP_IMAGE (text after the colon)
 
 # ---------------------------------------------------------------------------

@@ -3,7 +3,7 @@
 What the CRM builds so that a client's Inside Sales chat follows the client when admin moves them from one sales person to another.
 
 - **Audience:** the CRM team: the admin screen that moves a client, and the sales person's live chat menu.
-- **Backend:** PR #20, in the first backend image after `maxco-chat-cs:1.1.2`. It needs SQL file `12_dbchanges_202611241200.sql`.
+- **Backend:** image `maxco-chat-cs:1.1.3` (PR #20). It needs SQL file `12_dbchanges_202611241200.sql`.
 - **Full contract:** `docs/integration-guide-crm.md` section 11 (moving a client) and section 9.3 (refused messages). This guide is the part of it the CRM builds for this change.
 - The code samples are Dart sketches for `socket_io_client` and `http`. They were **not compiled or run**; check them against the package versions you use.
 

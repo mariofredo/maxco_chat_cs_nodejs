@@ -72,7 +72,7 @@ CREATE TABLE `list_chats` (
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `closed_at` timestamp NULL DEFAULT NULL,
   `department_id` int DEFAULT NULL,
-  `sales_chat_key` varchar(100) COLLATE utf8mb4_general_ci GENERATED ALWAYS AS ((case when (`category_id` = 3) then `user_id` else NULL end)) STORED,
+  `sales_chat_key` varchar(100) COLLATE utf8mb4_general_ci GENERATED ALWAYS AS ((case when ((`category_id` = 3) and (`status` = _utf8mb4'active')) then `user_id` else NULL end)) STORED,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_list_chats_sales_chat` (`sales_chat_key`),
   KEY `FK_list_chats_list_chat_category` (`category_id`),

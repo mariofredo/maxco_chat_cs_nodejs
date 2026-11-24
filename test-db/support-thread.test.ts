@@ -60,4 +60,28 @@ describe("support thread", { skip: !hasDb && "MYSQLDATABASE not set" }, () => {
     const s = await getClientChatUnread("test-awc-th-unread");
     assert.equal(s.chats.find((c) => c.chatId === String(id))?.unread, 1);
   });
+
+  test("unread leaves out a closed Inside Sales chat, keeps the active one", async () => {
+    const u = "test-awc-th-unread-sales";
+    const closed = await insertChat({ tag: "th-unread-s1", userId: u, categoryId: 3, status: "closed", closedMinutesAgo: 60, referrerId: "sales-a" });
+    await insertMessage(closed, "admin", "sales-a", 30);
+    const active = await insertChat({ tag: "th-unread-s2", userId: u, categoryId: 3, status: "active", referrerId: "sales-b" });
+
+    const first = await getClientChatUnread(u);
+    assert.equal(first.total, 0);
+    assert.deepEqual(first.chats.map((c) => c.chatId), [String(active)]);
+
+    await insertMessage(active, "admin", "sales-b", 10);
+    const second = await getClientChatUnread(u);
+    assert.equal(second.total, 1);
+    assert.deepEqual(second.chats, [{ chatId: String(active), unread: 1 }]);
+  });
+
+  test("unread still counts a closed CS ticket", async () => {
+    const u = "test-awc-th-unread-cs";
+    const closed = await insertChat({ tag: "th-unread-c1", userId: u, categoryId: 1, status: "closed", closedMinutesAgo: 60 });
+    await insertMessage(closed, "admin", "A1", 30);
+    const s = await getClientChatUnread(u);
+    assert.deepEqual(s.chats, [{ chatId: String(closed), unread: 1 }]);
+  });
 });

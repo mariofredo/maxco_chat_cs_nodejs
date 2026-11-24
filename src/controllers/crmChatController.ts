@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
 import { fetchPendingChats, fetchClosedChat, fetchChatById, fetchActiveChats, fetchReferredChats, closeChatById, assignedUserChatData, waitingUserChatData, createNewChat, userPromotionChatData, openPromotionChat as openPromotionChatService, openInsideSalesChat as openInsideSalesChatService, getMaxWaitingMinutes } from "../services/crmChatService.js";
+import { reassignSalesChat as reassignSalesChatService } from "../services/salesChatService.js";
 import { FileUploadError, saveChatFile } from "../utils/chatFileStorage.js";
 import { getIO } from "../sockets/io.js";
 import { fetchChatMessages, getChatById, markUpdateReadAt } from "../services/chatService.js";
@@ -370,6 +371,42 @@ export async function openInsideSalesChat(req: Request, res: Response) {
       message: isNew
         ? "Inside sales chat created"
         : "Returning existing inside sales chat",
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+}
+
+/**
+ * Moves a client to another sales person (category_id = 3).
+ *
+ * The CRM calls this right after it moved the client. The active inside sales
+ * chat of the old sales person is closed (kept, with its messages) and a new
+ * active chat is created for the new one. When the chat already belongs to the
+ * new sales person nothing changes, so the call is safe to repeat.
+ */
+export async function reassignSalesChat(req: Request, res: Response) {
+  try {
+    const { user_id, user_name, user_referrer_id, user_referrer_name } = req.body ?? {};
+    const userId = String(user_id ?? "").trim();
+    const salesId = String(user_referrer_id ?? "").trim();
+    if (!userId || !salesId) {
+      return res.status(400).json({
+        success: false,
+        message: "user_id and user_referrer_id are required",
+      });
+    }
+    console.log(`Reassigning inside sales chat of ${userId} to ${salesId}`);
+    const { chat, closedChatId } = await reassignSalesChatService(
+      userId,
+      String(user_name ?? ""),
+      { id: salesId, name: String(user_referrer_name ?? "") }
+    );
+    res.json({
+      success: true,
+      data: { chat, closedChatId },
+      message: "Inside sales chat is with the new sales person",
     });
   } catch (err) {
     console.error(err);

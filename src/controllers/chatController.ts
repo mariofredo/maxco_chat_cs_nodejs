@@ -1,5 +1,6 @@
 import type { Request, Response } from "express";
-import { createNewChat, fetchActiveChats, fetchUserChats, getChatById, fetchChatMessages, fetchChatMessagesPage, updateChatStatus, markRead, ensureUserSalesChat } from "../services/chatService.js";
+import { createNewChat, fetchActiveChats, fetchUserChats, getChatById, fetchChatMessages, fetchChatMessagesPage, updateChatStatus, markRead } from "../services/chatService.js";
+import { ensureAppSalesChat, ensureUserSalesChat, type SalesMismatch } from "../services/salesChatService.js";
 import { getIO } from "../sockets/io.js";
 import { parseCategoryIds } from "../utils/categoryIds.js";
 
@@ -46,17 +47,39 @@ export async function getUserChats(req: Request, res: Response) {
 
 export async function getUserSalesChat(req: Request, res: Response) {
   console.log("Fetching chats for user with category 3 ensured");
-  const { userId, userName, userReferrerId, userReferrerName } = req.body;
+  const { userId, userName, userReferrerId, userReferrerName, source } = req.body;
   if (typeof userId !== "string" || !userId) {
+    return res.status(400).json({ success: false, message: "Missing user ID" });
+  }
+  // The mobile app sends source "app": it only gets the active Inside Sales
+  // chat and is told when its sales person is out of date. Any other caller
+  // keeps the previous behaviour.
+  const fromApp = source === "app";
+  const appUserId = userId.trim();
+  if (fromApp && !appUserId) {
     return res.status(400).json({ success: false, message: "Missing user ID" });
   }
 
   try {
-    await ensureUserSalesChat(userId, userName ?? "", userReferrerId ?? "", userReferrerName ?? "");
+    let salesMismatch: SalesMismatch | null = null;
+    if (fromApp) {
+      salesMismatch = await ensureAppSalesChat(appUserId, textOf(userName), {
+        id: textOf(userReferrerId),
+        name: textOf(userReferrerName),
+      });
+    } else {
+      await ensureUserSalesChat(userId, userName ?? "", userReferrerId ?? "", userReferrerName ?? "");
+    }
     // Pagination is opt-in: without page/pageSize every chat is returned.
     const { page, pageSize } = readPaging(req.body);
     // Optional categoryIds ("1,2" or [1, 2]): only those chat categories.
-    const result = await fetchUserChats(userId, page, pageSize, parseCategoryIds(req.body.categoryIds));
+    const result = await fetchUserChats(
+      fromApp ? appUserId : userId,
+      page,
+      pageSize,
+      parseCategoryIds(req.body.categoryIds),
+      { activeSalesOnly: fromApp },
+    );
     res.json({
       success: true,
       data: result.chats,
@@ -66,11 +89,20 @@ export async function getUserSalesChat(req: Request, res: Response) {
         pageSize: result.pageSize,
         hasMore: result.hasMore,
       },
+      // Left out, not null, when the app's sales person is the right one.
+      ...(salesMismatch ? { salesMismatch } : {}),
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ success: false, message: "Internal server error" });
   }
+}
+
+/** A text field of a request body: a string is trimmed, a number becomes its text, anything else is "". */
+function textOf(value: unknown): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return String(value);
+  return "";
 }
 
 /**

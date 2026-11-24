@@ -47,7 +47,7 @@ Header: X-API-Key
 |---|---|---|
 | 1 | Customer Support | **One row** for all CS tickets. Status and last message come from the newest ticket. Opening it shows the continuous conversation (section 3). |
 | 2 | Promotion | One row per chat, as today. |
-| 3 | Inside Sales | One row per chat, as today. With `source: "app"` (section 2.1) only the active one. A closed one refuses messages (section 2.1). |
+| 3 | Inside Sales | One row per chat, as today. With `source: "app"` (`POST /api/chats/user` only, section 2.1) only the active one. A closed one refuses messages (section 2.1). |
 
 - `categoryIds` is optional. With no value you get every category. `categoryIds=1` returns only the CS tickets, and `pagination.total` counts only those.
 - Each row has `id`, `chat_ticket`, `category_id`, `status` (`pending` / `active` / `closed`), `created_at`, `closed_at`, `last_message`, `last_message_time`, `last_message_content_type`, `last_message_sender_id`.

@@ -73,7 +73,7 @@ The message is not stored or broadcast.
 | `file_too_large` | file over 50 MB | `message` |
 | `file_type_not_allowed` | not jpg/jpeg/png/webp/mp4/mov/pdf/docx | `message` |
 
-A closed Inside Sales chat (its client was moved to another sales person, section 11) refuses messages from the sales person and from the client alike, and a client message does not reopen it. Closed Promotion chats are unchanged: CS replies are still stored there.
+A closed Inside Sales chat (closed by a move to another sales person, section 11, or by hand) refuses messages from the sales person and from the client alike, and a client message does not reopen it. Closed Promotion chats are unchanged: CS replies are still stored there.
 
 ## 4. Closing a chat
 
@@ -86,6 +86,7 @@ A closed Inside Sales chat (its client was moved to another sales person, sectio
 - **Idempotent.** Closing a chat that is already closed changes nothing and sends no event. REST answers `success` with `"Chat already closed"`. Your own page may also receive the `chat_closed` event right after the REST response; handle it idempotently.
 - A manual close sends no push and stores no automated message.
 - After the close, a message from the user opens a new ticket in Waiting.
+- Inside Sales chats are different: closing one stops both sides from writing in it (section 3.3). An app that sends `source: "app"` gets a new active chat on its next list load. **An app version without `source` keeps showing only the closed chat, and its client can write again only after the sales person uses "Chat with Client".**
 - The close reason and the CS who closed the chat are not stored yet.
 
 ## 5. Ticket history of a user
@@ -189,6 +190,6 @@ POST /api/chats/crm/reassign_sales_chat
 - The sales chat of the old sales person is **closed** and kept, with its messages. A new active chat is created for the new sales person. `closedChatId` is the old chat's id, `null` when nothing was closed (no active chat, or the chat already belongs to the new sales person).
 - **Old sales person's CRM:** `chat_closed { chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`. Show the chat as closed and disable its input: the server refuses messages to it with `send_message_error` `reason: "chat_closed"` (section 3.3).
 - **New sales person's CRM:** `new_user_chatroom { chatData }` on `user_<new sales person id>` (the socket joins it with `join_user`). Add the chat to the list and `join_chat` the room.
-- **Safe to repeat.** Calling it again for the same client and sales person changes nothing and sends no event. If the call fails, call it again.
-- **One-time step right after the release:** call it once for **every client that has a sales person**. Clients whose chat is already right are not changed; clients moved before the release are fixed.
+- **Safe to repeat.** Calling it again for the same client and sales person changes nothing and sends no event. If the call fails, call it again. After a `5xx`, call again and reload the lists: the change may already be saved.
+- **One-time step right after the release:** call it once for **every client that has a sales person**. Clients whose chat is already right are not changed; clients moved before the release are fixed. A client with no active Inside Sales chat gets a new, empty chat (it shows in that sales person's referred list). Each call that creates a chat sends `new_user_chatroom` to the sales person and to the client. Make the calls one after another, not in parallel.
 - "Chat with Client" is unchanged. Contract: `docs/integration-guide-crm.md` section 11.

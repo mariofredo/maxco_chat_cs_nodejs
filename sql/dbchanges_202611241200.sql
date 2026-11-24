@@ -12,9 +12,8 @@
 -- What it does (only when needed):
 --   1) changes the generated column sales_chat_key to
 --      user_id WHEN category_id = 3 AND status = 'active' (NULL otherwise), so the
---      unique index on it no longer counts closed or pending chats. The old rule
---      was stricter, so existing rows never conflict with the new one. Nothing
---      happens when the column is missing (run
+--      unique index on it no longer counts closed or pending chats. Existing rows
+--      already satisfy this index. Nothing happens when the column is missing (run
 --      sql/dbchanges_202611161515.sql first); the result below shows it,
 --   2) prints the resulting state (expected: 1, 1, 0).
 -- ============================================================================

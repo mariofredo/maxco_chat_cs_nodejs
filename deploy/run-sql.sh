@@ -17,7 +17,7 @@
 # container does. Backups go to BACKUP_DIR (default: the folder above deploy/).
 # A file that looks half applied stops the script before anything changes.
 # Stops at the first file that fails. MYSQL_CLIENT_IMAGE=... changes the image.
-# A new sql/ file needs a check in markers() below.
+# A new sql/ file needs a check in markers() below, or an entry next to 11/12 if it is safe to repeat.
 # ============================================================================
 set -euo pipefail
 cd "$(dirname "$0")"

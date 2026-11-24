@@ -286,7 +286,7 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 
 ## Chat list filter
 
-`GET /api/chats/user/:userId` and `POST /api/chats/user` return every chat of the user. That covers all categories, including each closed Customer Support ticket. Both accept an optional category filter:
+`GET /api/chats/user/:userId` and `POST /api/chats/user` return every chat of the user. That covers all categories, including each closed Customer Support ticket. `POST /api/chats/user` with `"source": "app"` leaves out closed Inside Sales chats (see "Inside Sales chat" below). Both accept an optional category filter:
 
 | Endpoint | How to send it |
 |---|---|

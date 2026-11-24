@@ -222,7 +222,7 @@ An admin `send_message` to a **closed Customer Support** chat is rejected: nothi
 { "event": "send_message_error", "payload": { "chat_id": 10, "reason": "chat_closed" } }
 ```
 
-A closed **Inside Sales** chat (the client was moved to another sales person, section 11) refuses messages the same way, from the sales person and from the client: nothing is stored, no push is sent and no new chat is opened. Unlike a Customer Support ticket, it is never reopened by a client message.
+A closed **Inside Sales** chat (closed by a move to another sales person, section 11, or by hand) refuses messages the same way, from the sales person and from the client: nothing is stored, no push is sent and no new chat is opened. Unlike a Customer Support ticket, it is never reopened by a client message.
 
 Disable the input of closed Customer Support and Inside Sales chats, and show an error if `send_message_error` arrives. Closed Promotion chats are unchanged.
 
@@ -231,6 +231,8 @@ Disable the input of closed Customer Support and Inside Sales chats, and show an
 `chat_closed` now carries `reason`: `"agent"` when CS closes the chat, `"auto_no_reply"` for the automated close, `"sales_changed"` when the client is moved to another sales person (section 11).
 
 `POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
+
+Closing an Inside Sales chat stops both sides from writing in it (section 9.3). An app that sends `source: "app"` gets a new active chat on its next list load. **An app version without `source` keeps showing only the closed chat, and its client can write again only after the sales person uses "Chat with Client".**
 
 A `send_message` with a `sender_type` other than `user` or `admin` is rejected (`system` messages are written by the server only).
 
@@ -274,9 +276,9 @@ The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `adm
 | The client's app | `new_user_chatroom` | `user_<client id>` | `{ chatData }` | Use the new chat (see the app guide). |
 
 - **Safe to repeat.** A second call for the same client and sales person changes nothing and sends no events. Two calls at the same time also leave one active chat.
-- If the call fails, call it again. Until it succeeds the client keeps chatting with the old sales person.
+- If the call fails, call it again. Until it succeeds the client keeps chatting with the old sales person. After a `5xx`, call again and reload the lists: the change may already be saved.
 - Only this endpoint moves a client. "Chat with Client" (`open_inside_sales_chat`) is unchanged.
-- **One-time step right after the release:** call `reassign_sales_chat` once for **every client that has a sales person**, with that client's current sales person. A client whose chat is already with that sales person is not changed; a client that was moved before the release gets the old chat closed and a new one for the right sales person.
+- **One-time step right after the release:** call `reassign_sales_chat` once for **every client that has a sales person**, with that client's current sales person. A client whose chat is already with that sales person is not changed; a client that was moved before the release gets the old chat closed and a new one for the right sales person. A client with no active Inside Sales chat gets a new, empty chat (it shows in that sales person's referred list). Each call that creates a chat sends `new_user_chatroom` to the sales person and to the client. Make the calls one after another, not in parallel.
 
 ## File uploads
 

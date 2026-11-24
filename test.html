@@ -492,7 +492,7 @@
     }
     const reason = CLOSE_REASON[d.reason] || d.reason || 'tanpa alasan';
     // Only Customer Support chats are tickets: a message to a closed CS ticket
-    // opens a new one. A closed Promotion / Sales chat keeps its messages.
+    // opens a new one. A closed Promotion chat keeps its messages; a closed Sales chat refuses them.
     if (!d.chatData || Number(d.chatData.category_id) !== 1) {
       addDivider(side, `🔒 Chat ditutup (${reason})`, 'closed');
       return;
@@ -501,10 +501,21 @@
     if (side === 'app') addDivider(side, 'Send a message to open a new ticket.', 'hint');
   }
 
+  // chat id -> category_id, learned from every chat object the page receives (REST rows and socket payloads).
+  const categoryOfChat = {};
+  function rememberChats(v, depth = 0) {
+    if (!v || typeof v !== 'object' || depth > 3) return;
+    if (Array.isArray(v)) { v.forEach((x) => rememberChats(x, depth + 1)); return; }
+    if (v.id != null && v.category_id != null) categoryOfChat[String(v.id)] = Number(v.category_id);
+    Object.keys(v).forEach((k) => rememberChats(v[k], depth + 1));
+  }
+
   function onSendError(side, d) {
     clearTimeout(sides[side].awaiting);
     sides[side].awaiting = null;
-    const text = d.reason === 'chat_closed' ? 'Tiket sudah ditutup; balasan tidak terkirim.' : (d.message || d.reason);
+    // Only a CS chat is a ticket; the error carries just chat_id, so the category comes from what the page has seen.
+    const closedText = categoryOfChat[String(d.chat_id)] === 1 ? 'Tiket sudah ditutup' : 'Chat sudah ditutup';
+    const text = d.reason === 'chat_closed' ? `${closedText}; balasan tidak terkirim.` : (d.message || d.reason);
     addBubble(side, { error: true, text: `Ditolak: ${text}` });
   }
 
@@ -605,7 +616,10 @@
       log(side, 'error', `Gagal terhubung: ${e.message}`);
       updateUI();
     });
-    socket.onAny((ev, payload) => log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`));
+    socket.onAny((ev, payload) => {
+      rememberChats(payload);
+      log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`);
+    });
     socket.on('new_message', (m) => onMessage(side, m));
     socket.on('assigned_admin_chat', (d) => addBubble(side, { system: true, text: `Admin ditugaskan: ${d.adminName || d.adminId}` }));
     socket.on('chat_closed', (d) => onChatClosed(side, d));
@@ -718,6 +732,7 @@
     try {
       const res = await fetch(base() + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
       const json = await res.json().catch(() => null);
+      rememberChats(json);
       log(source, res.ok ? 'rest' : 'error', `${method} ${path} → ${res.status} ${short(json)}`, `${method} ${path} → ${res.status}\n${full(json)}`);
       return { ok: res.ok, status: res.status, json };
     } catch (err) {

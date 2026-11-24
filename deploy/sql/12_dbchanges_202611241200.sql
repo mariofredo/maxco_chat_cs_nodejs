@@ -14,8 +14,8 @@
 --   1) changes the generated column sales_chat_key to
 --      user_id WHEN category_id = 3 AND status = 'active' (NULL otherwise), so the
 --      unique index on it no longer counts closed or pending chats. Existing rows
---      never conflict with it (the previous rule was stricter). Nothing happens
---      when the column is missing (11 creates it); the result below shows it,
+--      already satisfy this index. Nothing happens when the column is missing
+--      (11 creates it); the result below shows it,
 --   2) prints the resulting state (expected: 1, 1, 0).
 -- ============================================================================
 USE `maxco_chat_im`;

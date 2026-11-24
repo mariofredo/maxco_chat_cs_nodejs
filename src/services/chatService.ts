@@ -334,8 +334,9 @@ type MessageRoute = {
  * is none); an admin message is rejected (ChatClosedError), and so is a user
  * message from anyone else than the ticket's user.
  *
- * A closed Inside Sales chat (its sales person was replaced) takes no more
- * messages from anyone: always ChatClosedError, and no chat is opened.
+ * A closed Inside Sales chat (closed by a move to another sales person, or
+ * by hand) takes no more messages from anyone: always ChatClosedError, and
+ * no chat is opened.
  */
 async function routeMessage(
   chatId: number | string,

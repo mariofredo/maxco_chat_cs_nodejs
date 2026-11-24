@@ -21,7 +21,9 @@ export type ClientUnreadSummary = {
  * Aturan hitung: pesan dari admin/CRM atau pesan otomatis (system) yang
  * read_at IS NULL.
  * Semua chat milik user ikut dikembalikan (unread 0) supaya client bisa
- * join room socket-nya.
+ * join room socket-nya, kecuali chat Inside Sales (category 3) yang tidak
+ * aktif (sudah ditutup): chat itu tidak tampil di app dan tidak bisa dibalas,
+ * jadi tidak masuk daftar maupun total.
  */
 export async function getClientChatUnread(
   userId: string
@@ -38,6 +40,7 @@ export async function getClientChatUnread(
         ) AS unread
      FROM list_chats c
      WHERE c.user_id = ?
+       AND (c.category_id <> 3 OR c.status = 'active')
      ORDER BY c.created_at DESC;`,
     [userId]
   );

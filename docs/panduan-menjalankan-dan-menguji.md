@@ -137,8 +137,12 @@ api -X POST $BASE/api/chats/crm/current_service_chat -d '{"user_id":"user456"}'
 api -X POST $BASE/api/chats/crm/open_promotion_chat -d '{"user_id":"user456","user_name":"Ani"}'
 api -X POST $BASE/api/chats/crm/open_inside_sales_chat -d '{"user_id":"user789","user_name":"Dewi","user_referrer_id":"sales1","user_referrer_name":"Sales Satu","admin_id":"admin1","admin_name":"CS Ani"}'
 api -X POST $BASE/api/chats/crm/chat/referred -d '{"userReferrerId":"sales1","page":1,"pageSize":20}'
+api -X POST $BASE/api/chats/crm/reassign_sales_chat -d '{"user_id":"user789","user_name":"Dewi","user_referrer_id":"sales2","user_referrer_name":"Sales Dua"}'
+api -X POST $BASE/api/chats/crm/chat/referred -d '{"userReferrerId":"sales2","page":1,"pageSize":20}'
 ```
 Harapan: `create_service_chat` dan panggilan pertama `open_promotion_chat` / `open_inside_sales_chat` membalas `201`. Memanggil `open_promotion_chat` atau `open_inside_sales_chat` lagi membalas `200` (`isNew: false`) dengan chat yang sama. `create_service_chat` yang dipanggil ulang untuk user yang sudah punya chat membalas `200` dengan chat yang sama, untuk `admin_id` mana pun (semua CS boleh membuka chat CS lain). `chat/referred` menampilkan chat milik `sales1`.
+
+`reassign_sales_chat` (memindahkan `user789` dari `sales1` ke `sales2`) membalas `200`. `data.closedChatId` berisi id chat lama milik `sales1`: chat itu menjadi `closed` dan pesannya tetap ada. `data.chat` adalah chat baru yang `active` milik `sales2`. `chat/referred` untuk `sales2` menampilkan chat baru, sedangkan untuk `sales1` chat lama tampil dengan status `closed`. Memanggil `reassign_sales_chat` yang sama lagi membalas `200` dengan `closedChatId: null` dan chat yang sama; tidak ada yang berubah. Tanpa `user_id` atau `user_referrer_id` membalas `400` (`user_id and user_referrer_id are required`).
 
 **7.7 Upload file**
 ```bash
@@ -165,7 +169,7 @@ Buka `test.html` **satu kali** di browser. Halaman membagi dua sisi: **App (user
 2. Klik **Buat chat** (kolom Chat ID terisi otomatis), lalu **Masuk room (keduanya)**. Kotak langkah berubah hijau: "Semua siap".
 3. **CRM:** ketik balasan lalu **Kirim**. Karena pengirimnya admin dan chat masih pending, server mengaktifkan dan meng-assign chat. Kedua sisi menerima pesan (gelembung di kotak Percakapan) dan baris "Admin ditugaskan".
 4. **App:** balas. Gelembung muncul di kedua sisi.
-5. Tombol lain: **Tugaskan saya**, **Tutup chat**, **Buka promotion**, **Buka inside sales**, **Pending / Active / Closed / Referred / Info chat / Config** (CRM), **Chat saya**, **Belum dibaca**, **Inside sales**, **Muat riwayat**, **Tandai dibaca**, **Kirim file**. Tombol yang belum bisa dipakai tampil redup, dan alasannya muncul saat kursor diarahkan.
+5. Tombol lain: **Tugaskan saya**, **Tutup chat**, **Buka promotion**, **Buka inside sales**, **Pindah sales**, **Pending / Active / Closed / Referred / Info chat / Config** (CRM), **Chat saya**, **Belum dibaca**, **Inside sales**, **Muat riwayat**, **Tandai dibaca**, **Kirim file**. Tombol yang belum bisa dipakai tampil redup, dan alasannya muncul saat kursor diarahkan.
 6. Hasil REST dan event socket tampil di **Log kejadian**. Klik baris yang panjang untuk melihat lengkapnya, dan pakai filter Chat / Presence / Typing / REST / Error. Kolom **Lanjutan** di kanan atas berisi Referrer ID, halaman, dan jumlah per halaman.
 7. Jika pesan tidak kembali dari server dalam 3 detik, halaman menampilkan peringatan (biasanya Chat ID tidak ada di database).
 

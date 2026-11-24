@@ -323,6 +323,7 @@
         <button class="btn" data-act="closeChatRest" data-needs="chat" title="POST /api/chats/crm/chat/close">Tutup chat (REST)</button>
         <button class="btn" data-act="openPromotion" title="Atas nama user di panel App">Buka promotion</button>
         <button class="btn" data-act="openInsideSales" title="Atas nama user di panel App">Buka inside sales</button>
+        <button class="btn" data-act="reassignSales" title="POST /api/chats/crm/reassign_sales_chat (user di panel App)">Pindah sales</button>
       </div>
     </div>
 
@@ -482,7 +483,7 @@
     else clearTyping(side);   // the other party sent a message: they are no longer typing
   }
 
-  const CLOSE_REASON = { auto_no_reply: 'otomatis, user tidak membalas', agent: 'ditutup CS' };
+  const CLOSE_REASON = { auto_no_reply: 'otomatis, user tidak membalas', agent: 'ditutup CS', sales_changed: 'sales diganti' };
 
   function onChatClosed(side, d) {
     if (String(d.chatId) !== chatId()) {
@@ -941,6 +942,10 @@
       user_id: identity('app').id, user_name: identity('app').name,
       user_referrer_id: val('referrerId'), user_referrer_name: val('referrerName'),
       admin_id: identity('crm').id, admin_name: identity('crm').name
+    }),
+    reassignSales: () => api('crm', 'POST', '/api/chats/crm/reassign_sales_chat', {
+      user_id: identity('app').id, user_name: identity('app').name,
+      user_referrer_id: val('referrerId'), user_referrer_name: val('referrerName')
     }),
     clearChatId: () => { $('chatId').value = ''; SIDES.forEach((s) => { sides[s].joinedChat = ''; $('chatbox-' + s).replaceChildren(); }); updateUI(); },
     clearLog: () => $('log').replaceChildren()

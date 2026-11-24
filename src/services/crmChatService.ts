@@ -616,9 +616,9 @@ export async function openPromotionChat(userId: string, userName: string) {
  *   - user_referrer_id = the sales member who is logged in
  *   - status = 'active'
  *
- * There is only one inside sales chat per user (unique index
- * uq_list_chats_sales_chat), so this check is enough to tell whether the chat
- * already exists.
+ * There is only one ACTIVE inside sales chat per user (unique index
+ * uq_list_chats_sales_chat; closed ones are kept and not limited), so this
+ * check is enough to tell whether the chat already exists.
  */
 export async function findActiveInsideSalesChat(
   userId: string,
@@ -638,8 +638,9 @@ export async function findActiveInsideSalesChat(
  * The active inside sales chat of [userId], without the referrer condition.
  *
  * Used as a fallback: the unique index uq_list_chats_sales_chat allows only
- * ONE inside sales chat per user, so an existing chat (even one owned by
- * another sales member) is still that user's only inside sales chat.
+ * ONE ACTIVE inside sales chat per user (closed ones are kept), so an existing
+ * active chat (even one owned by another sales member) is still that user's
+ * only active inside sales chat.
  */
 export async function findAnyActiveInsideSalesChat(userId: string) {
   const [rows] = await pool.query<RowDataPacket[]>(
@@ -709,9 +710,9 @@ export async function openInsideSalesChat(
 
     return { chat, isNew: true };
   } catch (err) {
-    // Unique index uq_list_chats_sales_chat: a user may only have one inside
-    // sales chat. This error means another request created the chat first, so
-    // the existing chat is used instead.
+    // Unique index uq_list_chats_sales_chat: a user may only have one ACTIVE
+    // inside sales chat (closed ones are kept). This error means another
+    // request created the chat first, so the existing chat is used instead.
     if (
       typeof err === "object" &&
       err !== null &&
@@ -723,8 +724,9 @@ export async function openInsideSalesChat(
         return { chat, isNew: false };
       }
       // The chat belongs to another sales member: the database only allows
-      // one inside sales chat per user, so that chat is opened (owned by the
-      // other sales member) instead of creating one that is bound to fail.
+      // one active inside sales chat per user, so that chat is opened (owned
+      // by the other sales member) instead of creating one that is bound to
+      // fail.
       const anyChat = await findAnyActiveInsideSalesChat(userId);
       if (anyChat) {
         return { chat: anyChat, isNew: false };

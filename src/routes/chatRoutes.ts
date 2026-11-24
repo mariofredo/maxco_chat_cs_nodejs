@@ -41,6 +41,9 @@ crmRoutes.post("/promotion_chat", CrmChat.getCurrentPromotionChat);
 // chat is returned, so no duplicate chat is created.
 crmRoutes.post("/open_promotion_chat", CrmChat.openPromotionChat);
 crmRoutes.post("/open_inside_sales_chat", CrmChat.openInsideSalesChat);
+// Called when admin moves a client to another sales person: the old sales chat
+// is closed and a new one is opened for the new sales person.
+crmRoutes.post("/reassign_sales_chat", CrmChat.reassignSalesChat);
 // Initial online state of users (updates come from the presence_user_changed event).
 crmRoutes.get("/presence", CrmChat.getCrmUsersPresence);
 

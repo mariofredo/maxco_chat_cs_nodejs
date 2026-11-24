@@ -65,12 +65,15 @@ export async function insertChat(opts: {
   userId?: string;
   userName?: string | null;
   closedMinutesAgo?: number;
+  referrerId?: string | null;
+  referrerName?: string | null;
 }): Promise<number> {
   const [result] = await pool.query<ResultSetHeader>(
     `INSERT INTO list_chats
-       (chat_ticket, category_id, user_id, user_name, admin_id, admin_name, status, created_at, closed_at)
+       (chat_ticket, category_id, user_id, user_name, admin_id, admin_name, status, created_at, closed_at,
+        user_referrer_id, user_referrer_name)
      VALUES (?, ?, ?, ?, ?, ?, ?, NOW() - INTERVAL ? MINUTE,
-             IF(? IS NULL, NULL, NOW() - INTERVAL ? MINUTE))`,
+             IF(? IS NULL, NULL, NOW() - INTERVAL ? MINUTE), ?, ?)`,
     [
       `TEST-AWC-${opts.tag}`,
       opts.categoryId ?? 1,
@@ -82,6 +85,8 @@ export async function insertChat(opts: {
       opts.minutesAgo ?? 0,
       opts.closedMinutesAgo ?? null,
       opts.closedMinutesAgo ?? 0,
+      opts.referrerId ?? null,
+      opts.referrerName ?? null,
     ],
   );
   return result.insertId;

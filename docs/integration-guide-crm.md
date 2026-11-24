@@ -167,6 +167,9 @@ socket.on('typing', (data) {
 | from server | `presence_user_changed` | `{ userId, online }` |
 | from server | `typing` | `{ chatId: string, isTyping, senderId, senderType, senderName: string\|null }` |
 | REST | `GET /api/chats/crm/presence?userIds=a,b,c` | `{ success, data: { "<userId>": boolean } }` (`400` if empty or over 100) |
+| REST | `POST /api/chats/crm/reassign_sales_chat` | `{ user_id, user_name, user_referrer_id, user_referrer_name }` → `{ success, data: { chat, closedChatId }, message }` (`400` if `user_id` or `user_referrer_id` is missing; section 11) |
+| from server | `chat_closed` | `{ chatId, chatData, reason: "agent" \| "auto_no_reply" \| "sales_changed" }` |
+| from server | `new_user_chatroom` | `{ chatData }` (a new chat, on the channel `user_<id>` of the sales person or the client) |
 
 ## 8. Test checklist
 
@@ -223,7 +226,7 @@ Disable the input of closed Customer Support chats, and show an error if `send_m
 
 ### 9.4 Closing a chat
 
-`chat_closed` now carries `reason`: `"agent"` when CS closes the chat, `"auto_no_reply"` for the automated close.
+`chat_closed` now carries `reason`: `"agent"` when CS closes the chat, `"auto_no_reply"` for the automated close, `"sales_changed"` when the client is moved to another sales person (section 11).
 
 `POST /api/chats/crm/chat/close` now also sends `chat_closed` `{ chatId, chatData, reason: "agent" }` to `chat_<id>` (before, only the socket `close_chat` did), so the user's app learns that the ticket is closed. The REST response is unchanged. A CRM page that already updates itself from the REST response may receive this event for the same chat; treat it as idempotent.
 
@@ -237,6 +240,41 @@ The PIC (`admin_id` / `admin_name` of a chat) is informative only. Every CS can 
 - `POST /api/chats/crm/create_service_chat` no longer answers `401 "Chat already assigned to another admin"`. It returns the user's open chat to any CS.
 - Replying to a chat handled by another CS stores the message as usual. Within `max_waiting_minutes` it does not change the PIC (same takeover rule as before).
 - If the CRM disables the input when `admin_id` is not the logged-in CS, remove that check.
+
+## 11. Moving a client to another sales person
+
+A client has one **active** Inside Sales chat (`category_id = 3`), owned by one sales person (`user_referrer_id`). When admin moves the client to another sales person in the CRM, the chat server does not know until the CRM tells it. Call this right after the move succeeded:
+
+```
+POST /api/chats/crm/reassign_sales_chat
+{ "user_id": "u-42", "user_name": "Budi", "user_referrer_id": "sales-b", "user_referrer_name": "Sales B" }
+```
+
+- `user_id` (the client) and `user_referrer_id` (the **new** sales person) are required. Otherwise: `400 { success: false, message: "user_id and user_referrer_id are required" }`.
+- `user_name` and `user_referrer_name` are stored on the new chat. Send them.
+- Ids may be strings or numbers; they are trimmed and compared as text.
+- Response: `200 { success: true, data: { chat, closedChatId }, message }`. `chat` is the client's active Inside Sales chat after the call. `closedChatId` is the id of the old chat that was closed, or `null` when nothing was closed.
+
+| Client's chat before | Result |
+|---|---|
+| active chat of another sales person | The old chat is closed (`status = 'closed'`, `closed_at`); a new active chat is created for the new sales person. `closedChatId` is the old id. |
+| no active chat (none at all, or only closed ones) | A new active chat is created for the new sales person. `closedChatId: null`. |
+| active chat already owned by that sales person | Nothing changes and no event is sent. `closedChatId: null`. |
+
+The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the new sales person. The old chat and its messages are never deleted: it stays in the old sales person's list (`POST /api/chats/crm/chat/referred`) as a closed chat, and the new chat starts empty.
+
+**What each side receives**, after the change is saved:
+
+| Who | Event | Room | Payload | Do |
+|---|---|---|---|---|
+| Old sales person's CRM (and any screen with the old chat open) | `chat_closed` | `chat_<old id>` | `{ chatId, chatData, reason: "sales_changed" }` | Show the chat as closed and disable its input. |
+| New sales person's CRM | `new_user_chatroom` | `user_<new sales person id>` | `{ chatData }` | Add the chat to the list and `join_chat` its room. The CRM socket must have joined `user_<id>` with `join_user { userId }`, the same channel as for a chat opened with "Chat with Client". |
+| The client's app | `new_user_chatroom` | `user_<client id>` | `{ chatData }` | Use the new chat (see the app guide). |
+
+- **Safe to repeat.** A second call for the same client and sales person changes nothing and sends no events. Two calls at the same time also leave one active chat.
+- If the call fails, call it again. Until it succeeds the client keeps chatting with the old sales person.
+- Only this endpoint moves a client. "Chat with Client" (`open_inside_sales_chat`) is unchanged.
+- **One-time step right after the release:** call `reassign_sales_chat` once for **every client that has a sales person**, with that client's current sales person. A client whose chat is already with that sales person is not changed; a client that was moved before the release gets the old chat closed and a new one for the right sales person.
 
 ## File uploads
 

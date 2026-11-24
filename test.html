@@ -279,7 +279,7 @@
         <button class="btn" data-act="crmPending">Pending</button>
         <button class="btn" data-act="crmActive">Active</button>
         <button class="btn" data-act="crmClosed">Closed</button>
-        <button class="btn" data-act="crmReferred">Referred</button>
+        <button class="btn" data-act="crmReferred" title="POST /api/chats/crm/chat/referred: chat Inside Sales (kategori 3) milik Referrer ID, aktif dan tertutup">Referred</button>
         <button class="btn" data-act="crmChatInfo" data-needs="chat">Info chat</button>
         <button class="btn" data-act="crmConfig">Config</button>
       </div>
@@ -946,7 +946,8 @@
     crmActive,
     crmTicketHistory,
     crmClosed: () => api('crm', 'GET', `/api/chats/crm/closed?${paging()}`),
-    crmReferred: () => api('crm', 'POST', '/api/chats/crm/chat/referred', { userReferrerId: val('referrerId'), ...pageBody() }),
+    // Without categoryIds the server lists only Customer Support chats (category 1).
+    crmReferred: () => api('crm', 'POST', '/api/chats/crm/chat/referred', { userReferrerId: val('referrerId'), categoryIds: '3', ...pageBody() }),
     crmChatInfo: () => api('crm', 'GET', `/api/chats/crm/chat/room/${encodeURIComponent(chatId())}`),
     crmConfig: () => api('crm', 'GET', '/api/chats/crm/config'),
     assign: () => emit('crm', 'assigned_admin_chat', { chatId: chatId(), adminId: identity('crm').id, adminName: identity('crm').name }),

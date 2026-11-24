@@ -265,7 +265,7 @@ POST /api/chats/crm/reassign_sales_chat
 | no active chat (none at all, or only closed ones) | A new active chat is created for the new sales person. `closedChatId: null`. |
 | active chat already owned by that sales person | Nothing changes and no event is sent. `closedChatId: null`. |
 
-The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the new sales person. The old chat and its messages are never deleted: it stays in the old sales person's list (`POST /api/chats/crm/chat/referred`) as a closed chat, and the new chat starts empty. The closed chat takes no more messages (section 9.3).
+The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the new sales person. The old chat and its messages are never deleted: it stays in the old sales person's list (`POST /api/chats/crm/chat/referred` with `categoryIds: [3]`; without `categoryIds` that list holds only Customer Support chats) as a closed chat, and the new chat starts empty. The closed chat takes no more messages (section 9.3).
 
 **What each side receives**, after the change is saved:
 

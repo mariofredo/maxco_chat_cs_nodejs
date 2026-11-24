@@ -3,7 +3,7 @@
 What the CRM builds so that a client's Inside Sales chat follows the client when admin moves them from one sales person to another.
 
 - **Audience:** the CRM team: the admin screen that moves a client, and the sales person's live chat menu.
-- **Backend:** PR #20, in the first backend image after `maxco-chat-cs:1.1.2`. It needs SQL file `12_dbchanges_202611241200.sql`.
+- **Backend:** image `maxco-chat-cs:1.1.3` (PR #20). It needs SQL file `12_dbchanges_202611241200.sql`.
 - **Full contract:** `docs/integration-guide-crm.md` section 11 (moving a client) and section 9.3 (refused messages). This guide is the part of it the CRM builds for this change.
 - The code samples are Dart sketches for `socket_io_client` and `http`. They were **not compiled or run**; check them against the package versions you use.
 
@@ -150,7 +150,7 @@ socket.on('new_user_chatroom', (data) {
 
 - The server refuses a message to a closed Inside Sales chat, whoever closed it: a move, or a sales person or CS closing it by hand. The message is not stored and no push is sent. Only the sending socket gets `send_message_error { chat_id, reason: "chat_closed" }`, without `message`.
 - Disable the input of every chat with `category_id = 3` and `status: "closed"`, and do not add the bubble when the error arrives.
-- **Lists:** `POST /api/chats/crm/chat/referred { userReferrerId, page, pageSize }` returns active and closed chats. After a move, the old sales person's list has the old chat as closed and the new sales person's list has the new chat. Show the status on each row.
+- **Lists:** `POST /api/chats/crm/chat/referred { userReferrerId, categoryIds: [3], page, pageSize }` returns active and closed chats. Send `categoryIds`: without it the server lists only Customer Support chats (category 1), so no Inside Sales chat shows. After a move, the old sales person's list has the old chat as closed and the new sales person's list has the new chat. Show the status on each row.
 - **After a chat was closed by hand**, "Chat with Client" opens a new active chat for the sales person who clicks it, when the client has no active one. The client's app picks it up live (`new_user_chatroom`).
 
 ## 6. One-time step after the release
@@ -194,11 +194,11 @@ for (final client in clientsWithSalesPerson) { // one at a time
 
 Open `test.html` (repo root) against the backend. The **CRM** panel plays the sales person and the **App** panel plays the client.
 
-1. Set **Referrer ID (sales)** to `sales1`. Click **Connect keduanya**, then App **Inside sales**: the log shows the client's active Inside Sales chat, owned by `sales1`.
-2. Put that chat's id in **Chat ID** and join the room on both sides. Send a message from each side.
+1. Open **Lanjutan** (under the server fields) and set **Referrer ID (sales)** to `sales1`. Click **Connect keduanya**, then App **Inside sales**: the log shows the client's active Inside Sales chat, owned by `sales1`.
+2. Put that chat's id in **Chat ID** and click **Masuk room (keduanya)**. Send a message from each side.
 3. Set **Referrer ID** to `sales2` and click CRM **Pindah sales**. The log shows `200` with `closedChatId` = the old chat's id. Both panels show "🔒 Chat ditutup (sales diganti)", and the App log shows `new_user_chatroom` with the new chat.
 4. Reply from the CRM in the old chat: "Ditolak: Chat sudah ditutup; balasan tidak terkirim."
-5. CRM **Referred** with `sales2`: the new chat. With `sales1`: the old chat, `closed`.
+5. CRM **Referred** (it sends `categoryIds: 3`) with Referrer ID `sales2`: the new chat, `active`. With `sales1`: the old chat, `closed`, with its messages.
 6. Click **Pindah sales** again: `closedChatId: null`, no event.
 
 ## 9. Test checklist

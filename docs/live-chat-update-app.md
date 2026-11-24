@@ -47,7 +47,7 @@ Header: X-API-Key
 |---|---|---|
 | 1 | Customer Support | **One row** for all CS tickets. Status and last message come from the newest ticket. Opening it shows the continuous conversation (section 3). |
 | 2 | Promotion | One row per chat, as today. |
-| 3 | Inside Sales | One row per chat, as today. With `source: "app"` (section 2.1) only the active one. |
+| 3 | Inside Sales | One row per chat, as today. With `source: "app"` (section 2.1) only the active one. A closed one refuses messages (section 2.1). |
 
 - `categoryIds` is optional. With no value you get every category. `categoryIds=1` returns only the CS tickets, and `pagination.total` counts only those.
 - Each row has `id`, `chat_ticket`, `category_id`, `status` (`pending` / `active` / `closed`), `created_at`, `closed_at`, `last_message`, `last_message_time`, `last_message_content_type`, `last_message_sender_id`.
@@ -67,6 +67,7 @@ POST /api/chats/user
 - `userReferrerId` / `userReferrerName` are the sales person the app knows. The server creates the Inside Sales chat when there is no active one (or when the active one has no sales person), and never moves the user to another sales person.
 - **`salesMismatch`** `{ sent, currentReferrerId, currentReferrerName }` means the active chat belongs to a different sales person than the one the app sent: the app's copy is out of date. The list still holds the active chat. Refreshing the user's data is optional. The field is absent when there is no mismatch.
 - Live: `chat_closed` with `reason: "sales_changed"` on `chat_<old id>` means the CRM moved the user. Drop that chat from the list and close its screen. The new chat arrives as `new_user_chatroom { chatData }`: show it as the Inside Sales chat and `join_chat` its room.
+- **A closed Inside Sales chat refuses messages.** `send_message` to it is not stored, sends no push and opens no new chat (unlike a CS ticket, section 3). The sending socket gets `send_message_error { chat_id, reason: "chat_closed" }`, without `message`: do not add the bubble, and keep the input of a closed Inside Sales chat disabled. Closed Promotion chats are unchanged.
 
 ## 3. The Customer Support conversation
 
@@ -194,4 +195,4 @@ Open `test.html` (repo root) against the backend. The **App** panel plays this a
 - **Auto-close is on by default** (`auto_close_minutes = 10`) once the backend runs migration 10. Release the app first, or ask the backend team to set it to `0` until then; no restart is needed.
 - **Times:** release the app together with the backend. Before it, times were the database server's local time in the same format, so an app that reads them as UTC shows them shifted against the old backend, and an app that shows the raw text shows UTC (7 hours behind WIB) against the new one.
 - **Old app versions:** if an old version lets the user type into a closed ticket, the message goes to a new ticket with a different `chat_id`, and the old screen may not show it.
-- **`source: "app"`** is opt-in. An app version that does not send it keeps listing every Inside Sales chat, closed ones included, and gets no `salesMismatch`.
+- **`source: "app"`** is opt-in. An app version that does not send it keeps listing every Inside Sales chat, closed ones included, and gets no `salesMismatch`. A message to a closed one is refused with `send_message_error` (`reason: "chat_closed"`), whatever the app version.

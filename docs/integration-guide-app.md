@@ -175,7 +175,7 @@ Use `test.html`: the page plays the CRM side for you.
 
 ## 9. Tickets (Customer Support)
 
-Each Customer Support chat is one **ticket** (`chat_ticket`, for example `1234-5678-9012`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Sales chats are unchanged.
+Each Customer Support chat is one **ticket** (`chat_ticket`, for example `1234-5678-9012`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion chats are unchanged. A closed Inside Sales chat refuses messages (see "Inside Sales chat" below).
 
 ### 9.1 Automated close
 
@@ -219,7 +219,7 @@ The server opens the new ticket. The app does not call anything extra:
 
 Two quick messages to a closed ticket open one ticket, not two. For `new_message` of a normal message, `previous_chat_id` is `null` and `is_new_ticket` is `false`.
 
-Promotion and Sales chats keep today's behavior.
+Promotion chats keep today's behavior. A message to a closed Inside Sales chat opens no new chat: it is refused (see "Inside Sales chat" below).
 
 ### 9.3 Support thread
 
@@ -282,7 +282,7 @@ A refused file is not stored. The sender receives:
 - "File is larger than 50 MB"
 - "File type not allowed (allowed: jpg, jpeg, png, webp, mp4, mov, pdf, docx)"
 
-The same `send_message_error` event also carries `reason: "chat_closed"` (section 9).
+The same `send_message_error` event also carries `reason: "chat_closed"` (section 9, and "Inside Sales chat" below).
 
 ## Chat list filter
 
@@ -321,7 +321,8 @@ The same `send_message_error` event also carries `reason: "chat_closed"` (sectio
 - **When the CRM moves the user** while the app is open, the app receives:
   - `chat_closed` `{ chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`: drop that chat from the list and close its screen;
   - `new_user_chatroom` `{ chatData }` on `user_<userId>`: use `chatData` as the Inside Sales chat and `join_chat` its room.
-- **Without `source`** (or with any other value) nothing changes: every chat is listed, closed Inside Sales chats included, and there is no `salesMismatch`.
+- **A closed Inside Sales chat refuses messages.** `send_message` to it is not stored, sends no push and opens no new chat. Only the sending socket receives `send_message_error` `{ chat_id, reason: "chat_closed" }` (there is no `message`): do not add the bubble, and keep the input of a closed Inside Sales chat disabled. Send to the active Inside Sales chat only. Customer Support tickets are different (section 9.2: the server opens a new ticket), and closed Promotion chats are unchanged.
+- **Without `source`** (or with any other value) nothing changes: every chat is listed, closed Inside Sales chats included, and there is no `salesMismatch`. Sending to a closed Inside Sales chat is still refused.
 
 ## Times
 

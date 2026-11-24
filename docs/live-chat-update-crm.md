@@ -69,11 +69,11 @@ The message is not stored or broadcast.
 
 | `reason` | When | Show |
 |---|---|---|
-| `chat_closed` | CS reply to a **closed CS ticket** | "This ticket is closed". Keep the input of closed CS tickets disabled. |
+| `chat_closed` | CS reply to a **closed CS ticket**, or a message to a **closed Inside Sales chat** | "This ticket is closed" (CS) or "This chat is closed" (Inside Sales). Keep the input of closed CS tickets and closed Inside Sales chats disabled. |
 | `file_too_large` | file over 50 MB | `message` |
 | `file_type_not_allowed` | not jpg/jpeg/png/webp/mp4/mov/pdf/docx | `message` |
 
-Closed Promotion and Inside Sales chats are unchanged: CS replies are still stored there.
+A closed Inside Sales chat (its client was moved to another sales person, section 11) refuses messages from the sales person and from the client alike, and a client message does not reopen it. Closed Promotion chats are unchanged: CS replies are still stored there.
 
 ## 4. Closing a chat
 
@@ -187,7 +187,7 @@ POST /api/chats/crm/reassign_sales_chat
 
 - `user_id` and `user_referrer_id` are required (`400` otherwise). Send the names too: they are stored on the new chat.
 - The sales chat of the old sales person is **closed** and kept, with its messages. A new active chat is created for the new sales person. `closedChatId` is the old chat's id, `null` when nothing was closed (no active chat, or the chat already belongs to the new sales person).
-- **Old sales person's CRM:** `chat_closed { chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`. Show the chat as closed and disable its input.
+- **Old sales person's CRM:** `chat_closed { chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`. Show the chat as closed and disable its input: the server refuses messages to it with `send_message_error` `reason: "chat_closed"` (section 3.3).
 - **New sales person's CRM:** `new_user_chatroom { chatData }` on `user_<new sales person id>` (the socket joins it with `join_user`). Add the chat to the list and `join_chat` the room.
 - **Safe to repeat.** Calling it again for the same client and sales person changes nothing and sends no event. If the call fails, call it again.
 - **One-time step right after the release:** call it once for **every client that has a sales person**. Clients whose chat is already right are not changed; clients moved before the release are fixed.

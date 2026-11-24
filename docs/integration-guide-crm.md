@@ -187,7 +187,7 @@ Use `test.html`: the **App (user)** side plays the mobile app for you.
 
 ## 9. Tickets (Customer Support)
 
-Each Customer Support chat is one **ticket** (`chat_ticket`). This section applies to Customer Support chats (`category_id = 1`) only; Promotion and Inside Sales chats are unchanged.
+Each Customer Support chat is one **ticket** (`chat_ticket`). This section applies to Customer Support chats (`category_id = 1`) only, except that 9.3 also covers closed Inside Sales chats. Promotion chats are unchanged.
 
 ### 9.1 Automated close
 
@@ -222,7 +222,9 @@ An admin `send_message` to a **closed Customer Support** chat is rejected: nothi
 { "event": "send_message_error", "payload": { "chat_id": 10, "reason": "chat_closed" } }
 ```
 
-Disable the input of closed Customer Support chats, and show an error if `send_message_error` arrives. Closed Promotion and Inside Sales chats are unchanged.
+A closed **Inside Sales** chat (the client was moved to another sales person, section 11) refuses messages the same way, from the sales person and from the client: nothing is stored, no push is sent and no new chat is opened. Unlike a Customer Support ticket, it is never reopened by a client message.
+
+Disable the input of closed Customer Support and Inside Sales chats, and show an error if `send_message_error` arrives. Closed Promotion chats are unchanged.
 
 ### 9.4 Closing a chat
 
@@ -261,7 +263,7 @@ POST /api/chats/crm/reassign_sales_chat
 | no active chat (none at all, or only closed ones) | A new active chat is created for the new sales person. `closedChatId: null`. |
 | active chat already owned by that sales person | Nothing changes and no event is sent. `closedChatId: null`. |
 
-The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the new sales person. The old chat and its messages are never deleted: it stays in the old sales person's list (`POST /api/chats/crm/chat/referred`) as a closed chat, and the new chat starts empty.
+The new chat has `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the new sales person. The old chat and its messages are never deleted: it stays in the old sales person's list (`POST /api/chats/crm/chat/referred`) as a closed chat, and the new chat starts empty. The closed chat takes no more messages (section 9.3).
 
 **What each side receives**, after the change is saved:
 

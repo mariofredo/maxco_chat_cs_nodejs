@@ -22,7 +22,7 @@ Admin can move a client from sales A to sales B in the CRM (the same CRM that us
 - A user can have many sales chats over time, at most one **active**.
 - When admin moves a client in the CRM, the CRM tells the chat server: A's chat is closed and a new active chat for B is created, right away.
 - The app sees only the active sales chat.
-- The app never moves a client. If it sends a sales person different from the active chat's, it gets an error.
+- The app never moves a client. If it sends a sales person different from the active chat's, it still gets its chats (the active sales chat included) plus a `salesMismatch` warning.
 - A keeps the old chat, closed, in their CRM list. Nothing is deleted.
 
 ## Non-goals
@@ -53,14 +53,16 @@ What triggers the switch:
 
 What the app gets when it sends a sales person that is not the active chat's:
 
-1. **An error, no list (409).** Picked by the user. The app must refresh the user's data and retry.
-2. The list plus a warning field. Not picked: the user wants the wrong id to fail.
+1. An error, no list (409). First picked, then dropped by the user: it locks the client out of every chat, CS included, for a data problem the client cannot fix.
+2. **The list with the active sales chat, plus a `salesMismatch` warning.** Picked by the user. Nothing bounces back (the app still never switches), the client keeps chatting, and the server log lists every mismatch.
 
 ## Design
 
 1. **Database** — new file in `sql/` (copied into `deploy/sql/` as `12_…`), run by hand like the others; `deploy/schema.sql` and `deploy/DATABASE.md` follow.
    - `sales_chat_key` becomes `CASE WHEN category_id = 3 AND status = 'active' THEN user_id ELSE NULL END`, still `STORED`; the unique index stays.
    - Idempotent, in the style of file 11. Existing data cannot conflict: today there is at most one sales chat per user.
+   - **File 11 must stop merging sales chats once the unique index exists.** `run-sql.sh` re-runs 11 on every existing database, and its step 1 moves the messages of every extra category 3 chat of a user into one chat and deletes the rest. After this change a closed chat with A next to an active chat with B is normal, and a re-run would merge A's conversation into B's chat and delete A's chat. Step 1 runs only while `uq_list_chats_sales_chat` is missing (the state it was written for); its result check counts users with more than one *active* sales chat. Both copies of 11 change.
+   - `run-sql.sh` runs the new file on existing databases like 11 (safe to repeat, after 11).
 2. **New CRM endpoint `POST /api/chats/crm/reassign_sales_chat`** (named like `open_inside_sales_chat`).
    - Body: `user_id`, `user_name`, `user_referrer_id` (B), `user_referrer_name` (B's name). `user_id` and `user_referrer_id` required (400 otherwise).
    - Active sales chat owned by someone else → close it (`status = 'closed'`, `closed_at = NOW()`) and create a new active chat for B, in one transaction.
@@ -74,22 +76,26 @@ What the app gets when it sends a sales person that is not the active chat's:
    - no active sales chat → create one for `userReferrerId` (as today);
    - active sales chat with the same `user_referrer_id`, or an empty `userReferrerId` in the request → return the list;
    - active sales chat with an empty `user_referrer_id` (created before the client had a sales person) and a non-empty `userReferrerId` → close it and create one for `userReferrerId`, like a reassign (no sales conversation to protect);
-   - active sales chat owned by a different, non-empty sales person → **409**, no list, nothing changes, logged on the server:
+   - active sales chat owned by a different, non-empty sales person → nothing changes, a warning is logged on the server, and the response is the normal list plus `salesMismatch`:
+
      ```json
-     { "success": false, "code": "SALES_REFERRER_MISMATCH",
-       "message": "...",
-       "data": { "currentReferrerId": "B", "currentReferrerName": "B's name" } }
+     { "success": true, "data": [ "...the active sales chat (B's) among the others..." ],
+       "pagination": { "...": "..." },
+       "salesMismatch": { "sent": "A", "currentReferrerId": "B", "currentReferrerName": "B's name" } }
      ```
+
+     `salesMismatch` is left out when there is no mismatch.
    - the returned list holds only `status = 'active'` sales chats; CS and Promotion chats are unchanged.
-5. **`POST /api/chats/user` without `source: "app"`** (old app versions, possibly the CRM): exactly as today. No check, no filter.
+5. **`POST /api/chats/user` without `source: "app"`** (old app versions, possibly the CRM): exactly as today. No check, no filter, no `salesMismatch`.
 6. **Message to a closed sales chat:** refused for both sides with the existing `send_message_error` (`ChatClosedError`). Otherwise A could still reach the client from the old chat, and the client would get a push with A's name for a chat they cannot see.
 7. **Docs:**
-   - `integration-guide-crm.md` / `live-chat-update-crm.md`: call `reassign_sales_chat` after a move; the old chat closes with `reason: "sales_changed"`; B gets `new_user_chatroom`.
-   - `integration-guide-app.md` / `live-chat-update-app.md`: send `source: "app"`; closed sales chats are no longer listed; handle `409 SALES_REFERRER_MISMATCH` (refresh the user's data, retry); on `chat_closed` with `sales_changed`, drop the old chat and use the one from `new_user_chatroom`; sending to a closed sales chat is refused.
+   - `integration-guide-crm.md` / `live-chat-update-crm.md`: call `reassign_sales_chat` after a move; the old chat closes with `reason: "sales_changed"`; B gets `new_user_chatroom`. **One-time step right after the release:** call `reassign_sales_chat` once for every client that has a sales person. It changes nothing for clients whose chat is already right and fixes every move made before the release.
+   - `integration-guide-app.md` / `live-chat-update-app.md`: send `source: "app"`; closed sales chats are no longer listed; `salesMismatch` means the app's sales person is out of date (optional: refresh the user's data); on `chat_closed` with `sales_changed`, drop the old chat and use the one from `new_user_chatroom`; sending to a closed sales chat is refused.
    - `panduan-menjalankan-dan-menguji.md` and `test.html`, where they cover the sales chat.
 8. **Tests:**
    - reassign: closes A's chat and creates B's; no active chat → creates B's; already B → no change; missing fields → 400; events sent.
-   - app path: same sales → list; empty `userReferrerId` → list; different sales → 409, nothing changed; ownerless active chat → replaced; no `source` → old behavior; list hides closed sales chats.
+   - app path: same sales → list, no `salesMismatch`; empty `userReferrerId` → list; different sales → list with the active chat and `salesMismatch`, nothing changed; ownerless active chat → replaced; no `source` → old behavior; list hides closed sales chats.
+   - migration: a closed and an active sales chat of one user can coexist, two active ones cannot; the new file runs twice without error; re-running 11 after it leaves both chats and their messages where they were.
    - send to a closed sales chat refused (admin and user).
 
 ## Calls made (not discussed)
@@ -98,19 +104,19 @@ What the app gets when it sends a sales person that is not the active chat's:
 - The new chat's `admin_id` / `admin_name` are B's.
 - An empty `userReferrerId` from the app is never a mismatch.
 - An active sales chat with no sales person is replaced when the app sends one (not a 409).
-- The "active only" filter and the 409 apply only with `source: "app"`, so a CRM call to the same endpoint behaves as today.
+- The "active only" filter and `salesMismatch` apply only with `source: "app"`, so a CRM call to the same endpoint behaves as today.
 - Messages to a closed sales chat are refused. Today they are stored; this also affects sales chats closed by hand from the CRM.
 - `chat_closed` reason is `"sales_changed"`.
 - After the CRM closes a sales chat by hand, the next app load creates a fresh one for the sales person the app sends.
 
 ## Known edges
 
-- **A client whose app keeps sending the old sales person cannot load any chat (CS included) until the app sends the right one.** This covers stale app data and clients moved before this release; for the second, admin runs the reassign. The server log lists every 409.
-- Old app versions (no `source`) still see closed sales chats and never get the 409.
+- A client moved before this release (or whose reassign call failed) keeps chatting with the old sales person until the reassign runs for them. The one-time CRM step after the release covers the first group; the server log lists every mismatch, so the second can be found.
+- Old app versions (no `source`) still see closed sales chats and never get `salesMismatch`.
 - The endpoint is protected only by the shared `X-API-Key`, like every other CRM endpoint.
-- If a client has no active sales chat, a sales person other than the owner can still create one through "Chat with Client" (today's behavior); the client's app then gets the 409 until admin runs the reassign.
+- If a client has no active sales chat, a sales person other than the owner can still create one through "Chat with Client" (today's behavior); the client's app then gets `salesMismatch` until admin runs the reassign.
 
 ## Left to the builder
 
-- Migration file name and timestamp, how the transaction and the shared per-user lock are written, test layout, the 409 `message` text.
+- Migration file name and timestamp, how the transaction and the shared per-user lock are written, test layout, the log line's wording.
 - Release and image version.

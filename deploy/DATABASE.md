@@ -78,13 +78,14 @@ Customer Service chats after old ones are closed).
 | `created_at` | `timestamp` | no | `CURRENT_TIMESTAMP` | When the chat was opened. |
 | `closed_at` | `timestamp` | yes | NULL | When the chat was closed. NULL while open. |
 | `department_id` | `int` | yes | NULL | Not used by the current app (§5). |
-| `sales_chat_key` | `varchar(100)` | yes | generated | Computed by the database: `user_id` when `category_id = 3`, otherwise NULL (`STORED`). Its unique key allows one Inside Sales chat per member. Never insert or update it (§4). |
+| `sales_chat_key` | `varchar(100)` | yes | generated | Computed by the database: `user_id` when `category_id = 3` and `status = 'active'`, otherwise NULL (`STORED`). Its unique key allows one **active** Inside Sales chat per member; closed ones are kept as history. Never insert or update it (§4). |
 
 Keys and indexes:
 
 - `PRIMARY` — `id`.
-- `uq_list_chats_sales_chat` — unique on `sales_chat_key`: at most one category 3 chat per `user_id`.
-  NULLs do not collide, so categories 1 and 2 are not limited by it.
+- `uq_list_chats_sales_chat` — unique on `sales_chat_key`: at most one **active** category 3 chat per
+  `user_id`. NULLs do not collide, so categories 1 and 2, and closed or pending Inside Sales chats, are
+  not limited by it.
 - `FK_list_chats_list_chat_category` — foreign key `category_id` → `list_chat_category.category_id`,
   `ON UPDATE RESTRICT`, `ON DELETE RESTRICT` (a category in use cannot be renumbered or deleted).
 - `idx_list_chats_user_id` — on `user_id` (chat list of one member).
@@ -217,7 +218,7 @@ chats and messages. The app uses the numbers directly, so keep the IDs exactly a
 |---|---|---|
 | 1 | Customer Service | Member ↔ CS chats. Opened by the member (or the CRM); starts `pending` until an agent takes it. |
 | 2 | Announcement | Promotion chats opened by the CRM (`chat_ticket = 'Promotion'`). |
-| 3 | Inside Sales | The member's chat with their sales person (`user_referrer_id`). One per member. |
+| 3 | Inside Sales | The member's chat with their sales person (`user_referrer_id`). One active chat per member. |
 
 `list_chat_config`:
 
@@ -239,12 +240,13 @@ by the app, so the database accepts rows that break them and the app then behave
    must point to its chat's `id` in this database. On a fresh install the next automatic IDs are
    46 (`list_chats`) and 211 (`list_messages`); after explicit IDs are inserted, numbering continues
    above the highest one.
-2. **Inside Sales (category 3): one chat per member, ever.** Enforced by the database through
-   `sales_chat_key`, and it counts closed chats too. A second one fails with
+2. **Inside Sales (category 3): one active chat per member.** Enforced by the database through
+   `sales_chat_key`, which counts only `active` chats. A second `active` one fails with
    `ERROR 1062 (23000): Duplicate entry '<user_id>' for key 'list_chats.uq_list_chats_sales_chat'`.
-   Import it as `active`, with `user_referrer_id` / `user_referrer_name` and `admin_id` /
-   `admin_name` set to the member's sales person: the CRM only opens `active` Inside Sales chats, and
-   a closed one blocks a new one from being created.
+   Import old ones as `closed` (with `closed_at` set) and at most one as `active`; the `active` one
+   carries `user_referrer_id` / `user_referrer_name` and `admin_id` / `admin_name` of the member's
+   sales person, because the CRM only opens `active` Inside Sales chats. A closed one does not block
+   a new one from being created.
 3. **Never write `sales_chat_key`.** The database computes it. Giving it a value fails with
    `ERROR 3105 (HY000): The value specified for generated column 'sales_chat_key' in table 'list_chats' is not allowed.`
    (MariaDB: `ERROR 1906`, or a silently ignored value outside strict SQL mode).

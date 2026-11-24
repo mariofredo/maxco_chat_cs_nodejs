@@ -4,13 +4,14 @@ What the CRM has to build for:
 - the Customer Support (CS) ticket flow,
 - open access for every CS,
 - closing chats,
-- the file upload limit.
+- the file upload limit,
+- moving a client to another sales person.
 
 **Audience:** the CRM team that builds the CS live chat menu.
 
 **Backend:** image `maxco-chat-cs:1.1.1` (PR #2 tickets and auto-close, PR #3 all-CS access, upload limit and category filter, PR #12 UTC times).
 
-**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10, "File uploads" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 5 now shows colleague typing.
+**Exhaustive contract:** `docs/integration-guide-crm.md`, sections 9, 10, 11, "File uploads" and "Times". Connection, presence and typing events are unchanged and are covered in sections 1–8 of that guide; section 5 now shows colleague typing.
 
 ## 1. What changes for CS
 
@@ -20,6 +21,7 @@ What the CRM has to build for:
 - **Closed tickets take no more CS replies.** Disable the input. The server rejects a reply with `send_message_error`.
 - **Auto-close.** When CS has replied and the user stays silent for 10 minutes, the server closes the ticket and stores an **automated message** (`sender_type: "system"`). It is on by default once migration 10 has run; it can be switched off (section 7).
 - **Files** are limited to 50 MB, and only images, videos, PDF and Word (docx) are accepted.
+- **Moving a client to another sales person** is a new REST call, `reassign_sales_chat` (section 11). Call it after every move, and once for every client with a sales person right after the release.
 - **Times are UTC.** Times keep their format (`2026-11-19 06:33:39`), but the value is now UTC whatever the database server's zone. Convert it to the browser time zone before showing it (section 8). This fixes times that showed hours off.
 
 ## 2. Lists
@@ -67,11 +69,11 @@ The message is not stored or broadcast.
 
 | `reason` | When | Show |
 |---|---|---|
-| `chat_closed` | CS reply to a **closed CS ticket** | "This ticket is closed". Keep the input of closed CS tickets disabled. |
+| `chat_closed` | CS reply to a **closed CS ticket**, or a message to a **closed Inside Sales chat** | "This ticket is closed" (CS) or "This chat is closed" (Inside Sales). Keep the input of closed CS tickets and closed Inside Sales chats disabled. |
 | `file_too_large` | file over 50 MB | `message` |
 | `file_type_not_allowed` | not jpg/jpeg/png/webp/mp4/mov/pdf/docx | `message` |
 
-Closed Promotion and Inside Sales chats are unchanged: CS replies are still stored there.
+A closed Inside Sales chat (closed by a move to another sales person, section 11, or by hand) refuses messages from the sales person and from the client alike, and a client message does not reopen it. Closed Promotion chats are unchanged: CS replies are still stored there.
 
 ## 4. Closing a chat
 
@@ -84,6 +86,7 @@ Closed Promotion and Inside Sales chats are unchanged: CS replies are still stor
 - **Idempotent.** Closing a chat that is already closed changes nothing and sends no event. REST answers `success` with `"Chat already closed"`. Your own page may also receive the `chat_closed` event right after the REST response; handle it idempotently.
 - A manual close sends no push and stores no automated message.
 - After the close, a message from the user opens a new ticket in Waiting.
+- Inside Sales chats are different: closing one stops both sides from writing in it (section 3.3). An app that sends `source: "app"` gets a new active chat on its next list load. **An app version without `source` keeps showing only the closed chat, and its client can write again only after the sales person uses "Chat with Client".**
 - The close reason and the CS who closed the chat are not stored yet.
 
 ## 5. Ticket history of a user
@@ -141,13 +144,15 @@ The closed chat moves to the Closed tab with the automated message as its last m
 |---|---|---|
 | REST | `POST /api/chats/crm/chat/active` | `{ adminId, page, pageSize, categoryIds? }` → every handled chat |
 | REST | `POST /api/chats/crm/chat/close` | `{ chatId }` |
+| REST | `POST /api/chats/crm/reassign_sales_chat` | `{ user_id, user_name, user_referrer_id, user_referrer_name }` → `{ success, data: { chat, closedChatId }, message }` |
 | REST | `POST /api/chats/crm/create_service_chat` | `{ user_id, user_name, admin_id }` → 200/201, no more 401 |
 | REST | `GET /api/chats/user/:userId` | `?page&pageSize&categoryIds` → one row per ticket |
 | REST | `POST /api/chats/crm/chat/upload` | `{ fileName, fileDataBase64 }` → 200 / 400 / 413 |
 | to server | `send_message` | `{ chat_id, sender_id, sender_type: "admin", sender_name, content_type, … }` |
 | to server | `close_chat` | `{ chatId }` |
 | from server | `new_message` | message fields + `chat_data`, `previous_chat_id`, `is_new_ticket` |
-| from server | `chat_closed` | `{ chatId, chatData, reason: "agent" \| "auto_no_reply" }` |
+| from server | `chat_closed` | `{ chatId, chatData, reason: "agent" \| "auto_no_reply" \| "sales_changed" }` |
+| from server | `new_user_chatroom` | `{ chatData }` (new sales chat, on `user_<sales person id>`) |
 | from server | `chat_room_created` | `{ id, user_id, chat_ticket, status, created_at, user_name }` |
 | from server | `send_message_error` | `{ chat_id, reason, message?, maxBytes? }` |
 
@@ -169,3 +174,22 @@ Open `test.html` (repo root) against the backend. The **CRM** panel plays CS and
 - Release a CRM version that renders `sender_type: "system"`, handles `send_message_error` and reads the times as UTC, together with the backend. Before it, times were the database server's local time in the same format.
 - The backend team runs migration 10 (`sql/dbchanges_202611181400.sql`) and sets nginx `client_max_body_size 72m`.
 - Migration 10 turns auto-close on (`auto_close_minutes = 10`). Run it after the app and CRM are released, or set the value to `0` right after it until then.
+- Right after the release, call `reassign_sales_chat` once for every client that has a sales person (section 11).
+
+## 11. Moving a client to another sales person
+
+When admin moves a client to another sales person, tell the chat server right after the move:
+
+```
+POST /api/chats/crm/reassign_sales_chat
+{ user_id, user_name, user_referrer_id, user_referrer_name }   // the NEW sales person
+→ { success, data: { chat, closedChatId }, message }
+```
+
+- `user_id` and `user_referrer_id` are required (`400` otherwise). Send the names too: they are stored on the new chat.
+- The sales chat of the old sales person is **closed** and kept, with its messages. A new active chat is created for the new sales person. `closedChatId` is the old chat's id, `null` when nothing was closed (no active chat, or the chat already belongs to the new sales person).
+- **Old sales person's CRM:** `chat_closed { chatId, chatData, reason: "sales_changed" }` on `chat_<old id>`. Show the chat as closed and disable its input: the server refuses messages to it with `send_message_error` `reason: "chat_closed"` (section 3.3).
+- **New sales person's CRM:** `new_user_chatroom { chatData }` on `user_<new sales person id>` (the socket joins it with `join_user`). Add the chat to the list and `join_chat` the room.
+- **Safe to repeat.** Calling it again for the same client and sales person changes nothing and sends no event. If the call fails, call it again. After a `5xx`, call again and reload the lists: the change may already be saved.
+- **One-time step right after the release:** call it once for **every client that has a sales person**. Clients whose chat is already right are not changed; clients moved before the release are fixed. A client with no active Inside Sales chat gets a new, empty chat (it shows in that sales person's referred list). Each call that creates a chat sends `new_user_chatroom` to the sales person and to the client. Make the calls one after another, not in parallel.
+- "Chat with Client" is unchanged. Contract: `docs/integration-guide-crm.md` section 11.

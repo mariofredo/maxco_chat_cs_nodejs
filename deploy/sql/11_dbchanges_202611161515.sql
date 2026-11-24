@@ -12,10 +12,12 @@
 -- deletes duplicate inside sales chats after moving their messages.
 --
 -- What it does (each step only when needed):
---   1) removes inside sales chats (category_id = 3) duplicated while the unique
---      index was missing: per user the newest ACTIVE chat is kept (the newest
---      chat when none is active), the messages of the others move to it, and
---      their admin history is deleted with them,
+--   1) only while the unique index uq_list_chats_sales_chat is missing: removes
+--      inside sales chats (category_id = 3) duplicated in the meantime: per user
+--      the newest ACTIVE chat is kept (the newest chat when none is active), the
+--      messages of the others move to it, and their admin history is deleted with
+--      them. Once the index exists this step does nothing, so closed inside sales
+--      chats (history next to a new active one, see 12) are never merged,
 --   2) re-creates FK_list_chats_list_chat_category with ON UPDATE RESTRICT
 --      when it still cascades (MySQL 8 / MariaDB refuse the generated column
 --      below on a cascading base column), and adds it back when it is missing
@@ -28,11 +30,21 @@
 
 USE `maxco_chat_im`;
 
--- 1) De-duplicate inside sales chats (no-op when there are no duplicates).
+-- 1) De-duplicate inside sales chats, only while the unique index is missing
+--    (the state this step was written for). With the index in place a user may
+--    have a closed chat next to an active one (12): merging them would move the
+--    conversation with one sales person into the chat with another and delete
+--    the old chat. @merge_sales = 0 then makes the INSERT below select nothing,
+--    so the UPDATE / DELETE statements that join its table change nothing.
+--    No-op as well when there are no duplicates.
 --    Kept chat per user: newest active, else newest - the chat the app itself
 --    looks up (status = 'active', ORDER BY created_at DESC).
 --    user_id carries the list_chats collation explicitly: a database created
 --    beforehand on MySQL 8 defaults to utf8mb4_0900_ai_ci (ERROR 1267).
+SET @merge_sales := (
+  SELECT COUNT(*) = 0 FROM information_schema.STATISTICS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'list_chats'
+    AND INDEX_NAME = 'uq_list_chats_sales_chat');
 DROP TEMPORARY TABLE IF EXISTS tmp_sales_chat_keep;
 CREATE TEMPORARY TABLE tmp_sales_chat_keep (
   user_id VARCHAR(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL,
@@ -47,7 +59,7 @@ SELECT c.user_id,
          ORDER BY (k.status = 'active') DESC, k.created_at DESC, k.id DESC
          LIMIT 1)
   FROM list_chats c
- WHERE c.category_id = 3
+ WHERE c.category_id = 3 AND @merge_sales = 1
  GROUP BY c.user_id;
 
 UPDATE list_messages m
@@ -111,7 +123,8 @@ PREPARE stmt FROM @s; EXECUTE stmt; DEALLOCATE PREPARE stmt;
 
 -- 5) Result. Expected: sales_chat_key_column = 1, unique_index = 1,
 --    category_fk_on_update = RESTRICT (or NO ACTION, same in InnoDB),
---    users_with_duplicate_sales_chats = 0.
+--    users_with_duplicate_sales_chats = 0 (users with more than one ACTIVE
+--    inside sales chat; closed ones may sit next to an active one).
 SELECT
   (SELECT COUNT(*) FROM information_schema.COLUMNS
     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'list_chats'
@@ -123,5 +136,5 @@ SELECT
     WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'list_chats'
       AND CONSTRAINT_NAME = 'FK_list_chats_list_chat_category') AS category_fk_on_update,
   (SELECT COUNT(*) FROM (
-     SELECT user_id FROM list_chats WHERE category_id = 3
+     SELECT user_id FROM list_chats WHERE category_id = 3 AND status = 'active'
      GROUP BY user_id HAVING COUNT(*) > 1) dup) AS users_with_duplicate_sales_chats;

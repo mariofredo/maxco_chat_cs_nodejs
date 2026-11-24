@@ -98,11 +98,10 @@ describe("ticket routing in sendMessage", { skip: !hasDb && "MYSQLDATABASE not s
     assert.equal((await getMessages(id)).length, 1);
   });
 
-  test("user message to a closed Inside Sales chat stays in that chat", async () => {
+  test("user message to a closed Inside Sales chat is refused, not rerouted", async () => {
     const id = await insertChat({ tag: "rt-sales", categoryId: 3, status: "closed" });
-    const res = await userMsg(id, "test-awc-rt-sales");
-    assert.equal(Number(res.chat_id), id);
-    assert.equal(res.previous_chat_id, null);
+    await assert.rejects(userMsg(id, "test-awc-rt-sales"), ChatClosedError);
+    assert.equal((await getMessages(id)).length, 0);
   });
 
   test("user message to an open CS chat is unchanged", async () => {

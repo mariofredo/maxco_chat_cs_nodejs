@@ -208,7 +208,7 @@
         <button class="btn" data-act="supportThread" title="GET /api/client/chat/support-thread/:userId — semua tiket CS sebagai satu thread">Thread tiket</button>
         <button class="btn" data-act="myChats" title="GET /api/chats/user/:userId?categoryIds=…">Chat saya</button>
         <button class="btn" data-act="unread">Belum dibaca</button>
-        <button class="btn" data-act="ensureSales" title="Membuat chat Inside Sales jika belum ada">Inside sales</button>
+        <button class="btn" data-act="ensureSales" title="POST /api/chats/user dengan source app: membuat chat Inside Sales jika belum ada, hanya chat aktif yang dikembalikan, salesMismatch jika sales berbeda">Inside sales</button>
       </div>
       <div class="sub">Daftar chat (seperti di app: tiket CS digabung jadi satu percakapan)</div>
       <div class="row">
@@ -323,6 +323,7 @@
         <button class="btn" data-act="closeChatRest" data-needs="chat" title="POST /api/chats/crm/chat/close">Tutup chat (REST)</button>
         <button class="btn" data-act="openPromotion" title="Atas nama user di panel App">Buka promotion</button>
         <button class="btn" data-act="openInsideSales" title="Atas nama user di panel App">Buka inside sales</button>
+        <button class="btn" data-act="reassignSales" title="POST /api/chats/crm/reassign_sales_chat (user di panel App)">Pindah sales</button>
       </div>
     </div>
 
@@ -482,7 +483,7 @@
     else clearTyping(side);   // the other party sent a message: they are no longer typing
   }
 
-  const CLOSE_REASON = { auto_no_reply: 'otomatis, user tidak membalas', agent: 'ditutup CS' };
+  const CLOSE_REASON = { auto_no_reply: 'otomatis, user tidak membalas', agent: 'ditutup CS', sales_changed: 'sales diganti' };
 
   function onChatClosed(side, d) {
     if (String(d.chatId) !== chatId()) {
@@ -491,7 +492,7 @@
     }
     const reason = CLOSE_REASON[d.reason] || d.reason || 'tanpa alasan';
     // Only Customer Support chats are tickets: a message to a closed CS ticket
-    // opens a new one. A closed Promotion / Sales chat keeps its messages.
+    // opens a new one. A closed Promotion chat keeps its messages; a closed Sales chat refuses them.
     if (!d.chatData || Number(d.chatData.category_id) !== 1) {
       addDivider(side, `🔒 Chat ditutup (${reason})`, 'closed');
       return;
@@ -500,10 +501,21 @@
     if (side === 'app') addDivider(side, 'Send a message to open a new ticket.', 'hint');
   }
 
+  // chat id -> category_id, learned from every chat object the page receives (REST rows and socket payloads).
+  const categoryOfChat = {};
+  function rememberChats(v, depth = 0) {
+    if (!v || typeof v !== 'object' || depth > 3) return;
+    if (Array.isArray(v)) { v.forEach((x) => rememberChats(x, depth + 1)); return; }
+    if (v.id != null && v.category_id != null) categoryOfChat[String(v.id)] = Number(v.category_id);
+    Object.keys(v).forEach((k) => rememberChats(v[k], depth + 1));
+  }
+
   function onSendError(side, d) {
     clearTimeout(sides[side].awaiting);
     sides[side].awaiting = null;
-    const text = d.reason === 'chat_closed' ? 'Tiket sudah ditutup; balasan tidak terkirim.' : (d.message || d.reason);
+    // Only a CS chat is a ticket; the error carries just chat_id, so the category comes from what the page has seen.
+    const closedText = categoryOfChat[String(d.chat_id)] === 1 ? 'Tiket sudah ditutup' : 'Chat sudah ditutup';
+    const text = d.reason === 'chat_closed' ? `${closedText}; balasan tidak terkirim.` : (d.message || d.reason);
     addBubble(side, { error: true, text: `Ditolak: ${text}` });
   }
 
@@ -604,7 +616,10 @@
       log(side, 'error', `Gagal terhubung: ${e.message}`);
       updateUI();
     });
-    socket.onAny((ev, payload) => log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`));
+    socket.onAny((ev, payload) => {
+      rememberChats(payload);
+      log(side, KIND[ev] || 'chat', `${ev}  ${short(payload)}`, `${ev}\n${full(payload)}`);
+    });
     socket.on('new_message', (m) => onMessage(side, m));
     socket.on('assigned_admin_chat', (d) => addBubble(side, { system: true, text: `Admin ditugaskan: ${d.adminName || d.adminId}` }));
     socket.on('chat_closed', (d) => onChatClosed(side, d));
@@ -717,6 +732,7 @@
     try {
       const res = await fetch(base() + path, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
       const json = await res.json().catch(() => null);
+      rememberChats(json);
       log(source, res.ok ? 'rest' : 'error', `${method} ${path} → ${res.status} ${short(json)}`, `${method} ${path} → ${res.status}\n${full(json)}`);
       return { ok: res.ok, status: res.status, json };
     } catch (err) {
@@ -921,7 +937,7 @@
     myChats,
     supportThread,
     unread: () => api('app', 'GET', `/api/client/chat/unread/${encodeURIComponent(identity('app').id)}`),
-    ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), ...pageBody() }),
+    ensureSales: () => api('app', 'POST', '/api/chats/user', { userId: identity('app').id, userName: identity('app').name, userReferrerId: val('referrerId'), userReferrerName: val('referrerName'), source: 'app', ...pageBody() }),
     send: (s) => sendMessage(s),
     sendFile: (s) => sendFile(s),
     teamPresence,
@@ -941,6 +957,10 @@
       user_id: identity('app').id, user_name: identity('app').name,
       user_referrer_id: val('referrerId'), user_referrer_name: val('referrerName'),
       admin_id: identity('crm').id, admin_name: identity('crm').name
+    }),
+    reassignSales: () => api('crm', 'POST', '/api/chats/crm/reassign_sales_chat', {
+      user_id: identity('app').id, user_name: identity('app').name,
+      user_referrer_id: val('referrerId'), user_referrer_name: val('referrerName')
     }),
     clearChatId: () => { $('chatId').value = ''; SIDES.forEach((s) => { sides[s].joinedChat = ''; $('chatbox-' + s).replaceChildren(); }); updateUI(); },
     clearLog: () => $('log').replaceChildren()

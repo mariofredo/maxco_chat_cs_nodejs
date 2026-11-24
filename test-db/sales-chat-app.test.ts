@@ -122,6 +122,17 @@ describe("app sales chat (source: app)", { skip: !hasDb && "MYSQLDATABASE not se
     assert.deepEqual(emitted, []);
   });
 
+  test("without source, no sales chat yet: one active chat for the sent sales person, only that sales person is told", async () => {
+    const user = "test-awc-ap-legacy-new";
+    await load({ userId: user, userName: "Budi", userReferrerId: "sales-l", userReferrerName: "L" });
+    assert.equal(sent.status, 200);
+    const chats = await salesChats(user);
+    assert.deepEqual(chats.map((c) => [c.status, c.user_referrer_id]), [["active", "sales-l"]]);
+    assert.deepEqual(salesRows().map((c: any) => [c.status, c.user_referrer_id]), [["active", "sales-l"]]);
+    assert.equal("salesMismatch" in sent.body, false);
+    assert.deepEqual(emitted.map((e) => [e.rooms, e.event]), [[["user_sales-l"], "new_user_chatroom"]]);
+  });
+
   test("app load and reassign at once leave one active chat", async () => {
     const user = "test-awc-ap-race";
     await Promise.all([

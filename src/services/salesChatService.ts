@@ -2,7 +2,8 @@ import type { RowDataPacket, ResultSetHeader } from "mysql2";
 import { pool } from "../config/db.js";
 import { randomNumericString } from "../utils/helper.js";
 import { getIO } from "../sockets/io.js";
-import { fetchChatById, findAnyActiveInsideSalesChat } from "./crmChatService.js";
+import { findAnyActiveInsideSalesChat } from "./crmChatService.js";
+import { getChatById } from "./chatService.js";
 
 // The sales person a client's inside sales chat (category_id = 3) belongs to.
 export type SalesPerson = { id: string; name: string };
@@ -45,6 +46,20 @@ function isDuplicateEntry(err: unknown): boolean {
     err !== null &&
     (err as { code?: string }).code === "ER_DUP_ENTRY"
   );
+}
+
+// replaceSalesChat got ER_DUP_ENTRY, rolled back and looked up the active chat
+// of the user ([winner]). A chat other than [current] holding that slot means
+// another writer opened it first: that chat is the answer. [current] itself
+// (its close was rolled back, so it is active again) or no active chat at all
+// means the unique index still counts closed chats: the old index, because
+// sql/dbchanges_202611241200.sql has not been run.
+export function isOtherWriterWinner(
+  current: RowDataPacket | null,
+  winner: RowDataPacket | null,
+): winner is RowDataPacket {
+  if (!winner) return false;
+  return !current || String(winner.id) !== String(current.id);
 }
 
 // A new ticket number, XXXX-XXXX-XXXX.
@@ -110,7 +125,10 @@ async function closeAndInsert(
  *
  * The unique index uq_list_chats_sales_chat allows one ACTIVE inside sales
  * chat per user. When another request created that chat first (ER_DUP_ENTRY)
- * nothing is changed and that chat is returned, with no events.
+ * nothing is changed and that chat is returned, with no events. When the
+ * duplicate is [current] itself or there is no active chat, the database still
+ * has the old index (sql/dbchanges_202611241200.sql not run): that is logged and
+ * thrown, so the caller answers 500.
  *
  * Events, after the commit: chat_closed to the old room (A's CRM and any open
  * screen of the client), new_user_chatroom to the new sales person's CRM and,
@@ -128,24 +146,30 @@ export async function replaceSalesChat(
     changed = await closeAndInsert(userId, userName, sales, current);
   } catch (err) {
     if (isDuplicateEntry(err)) {
-      // Another request already opened the active chat: it is the answer.
       const winner = await findAnyActiveInsideSalesChat(userId);
-      if (winner) {
+      if (isOtherWriterWinner(current, winner)) {
+        // Another request already opened the active chat: it is the answer.
         return { chat: winner, closedChatId: null };
       }
+      // The old unique index is still in place: say so, the caller answers 500.
+      const message =
+        "Inside sales chat was not replaced: the unique index uq_list_chats_sales_chat still counts closed chats. " +
+        "Run sql/dbchanges_202611241200.sql (deploy: 12_dbchanges_202611241200.sql) on this database.";
+      console.error(`${message} user ${userId}`);
+      throw new Error(message, { cause: err });
     }
     throw err;
   }
   const { closedChatId, newChatId } = changed;
 
-  const chat = await fetchChatById(String(newChatId));
+  const chat = await getChatById(String(newChatId));
   if (!chat) {
     throw new Error(`Sales chat ${newChatId} not found after it was created`);
   }
 
   const io = getIO();
   if (closedChatId !== null) {
-    const closedChat = await fetchChatById(String(closedChatId));
+    const closedChat = await getChatById(String(closedChatId));
     io.to(`chat_${closedChatId}`).emit("chat_closed", {
       chatId: closedChatId,
       chatData: closedChat,

@@ -135,8 +135,8 @@ socket.on('new_user_chatroom', (data) {
 
 Open `test.html` (repo root) against the backend. The **App** panel plays this app and the **CRM** panel plays the sales person.
 
-1. Set **Referrer ID (sales)** to `sales1`. Click **Connect keduanya**, then App **Inside sales**: the list holds one Inside Sales chat, owned by `sales1`, and no `salesMismatch`.
-2. Put that chat's id in **Chat ID** and join the room on both sides. Send a message from the App.
+1. Open **Lanjutan** (under the server fields) and set **Referrer ID (sales)** to `sales1`. Click **Connect keduanya**, then App **Inside sales**: the list holds one Inside Sales chat, owned by `sales1`, and no `salesMismatch`.
+2. Put that chat's id in **Chat ID** and click **Masuk room (keduanya)**. Send a message from the App.
 3. Set **Referrer ID** to `sales2` and click CRM **Pindah sales**. The App shows "🔒 Chat ditutup (sales diganti)", and its log shows `new_user_chatroom` with the new chat.
 4. Send from the App in the old chat: "Ditolak: Chat sudah ditutup; balasan tidak terkirim."
 5. Set **Referrer ID** back to `sales1` and click App **Inside sales**: the list holds only the new chat of `sales2`, plus `salesMismatch { sent: "sales1", currentReferrerId: "sales2", … }`. Nothing changed on the server.
